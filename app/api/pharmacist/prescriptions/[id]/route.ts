@@ -38,6 +38,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         return { error: 'Prescription has already been dispensed and cannot be filled again.', code: 409 };
       }
 
+      if (currentRx.status === 'PENDING' && status === 'DISPENSED') {
+        return { error: 'Prescription must be VERIFIED before it can be DISPENSED.', code: 400 };
+      }
+
       if (currentRx.status === 'REJECTED' && status === 'DISPENSED') {
         return { error: 'Cannot dispense a rejected prescription.', code: 400 };
       }

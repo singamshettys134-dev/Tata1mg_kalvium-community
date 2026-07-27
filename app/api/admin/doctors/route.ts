@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return jsonSuccess(doctor.doctorProfile, 201);
+    return jsonSuccess({ ...doctor.doctorProfile, tempPassword }, 201);
   } catch (err) {
     console.error('[POST /api/admin/doctors]', err);
     return jsonError('Internal server error', 500);

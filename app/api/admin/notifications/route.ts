@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { NotificationType } from '@prisma/client';
 import prisma from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireRole } from '@/lib/auth';
 import { CreateNotificationSchema, ListQuerySchema } from '@/lib/validationSchemas';
 import { jsonError, jsonSuccess } from '@/lib/apiResponse';
 
@@ -74,6 +74,9 @@ export async function POST(request: NextRequest) {
 
       return jsonSuccess(updatedList);
     }
+
+    const adminAuth = requireRole(request, 'ADMIN');
+    if (adminAuth.error) return jsonError(adminAuth.error, adminAuth.error === 'Unauthorized' ? 401 : 403);
 
     const parsed = CreateNotificationSchema.safeParse(body);
     if (!parsed.success) return jsonError(parsed.error.errors[0].message);

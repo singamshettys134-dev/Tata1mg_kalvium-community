@@ -1,87 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-enum Role {
-  DOCTOR
-  PHARMACIST
-  ADMIN
-}
-
-enum ApprovalStatus {
-  PENDING
-  UNDER_REVIEW
-  VERIFIED
-  REJECTED
-}
-
-enum PrescriptionStatus {
-  PENDING
-  VERIFIED
-  REJECTED
-  DISPENSED
-}
-
-enum OrderStatus {
-  PENDING
-  PACKING
-  READY_FOR_DELIVERY
-  OUT_FOR_DELIVERY
-  DELIVERED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  PENDING
-  SUCCESSFUL
-  FAILED
-  CANCELLED
-  REFUNDED
-}
-
-enum VerificationEntityType {
-  DOCTOR
-  PHARMACIST
-  PHARMACY
-}
-
-enum NotificationType {
-  INFO
-  WARNING
-  ERROR
-  SUCCESS
-}
-
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String
-  role         Role
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
-
-  doctorProfile     DoctorProfile?
-  pharmacistProfile PharmacistProfile?
+  id                String               @id @default(uuid())
+  email             String               @unique
+  passwordHash      String
+  role              Role
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
   adminProfile      AdminProfile?
-  sessions          Session[]
-  refreshTokens     RefreshToken[]
+  auditLogs         AuditLog[]
+  doctorProfile     DoctorProfile?
+  uploads           FileUpload[]
+  notifications     Notification[]
   otps              OTP[]
   passwordResets    PasswordResetToken[]
-  notifications     Notification[]
-  auditLogs         AuditLog[]
-  uploads           FileUpload[]
+  pharmacistProfile PharmacistProfile?
+  refreshTokens     RefreshToken[]
+  sessions          Session[]
 
   @@index([email])
 }
 
 model Address {
-  id         String   @id @default(uuid())
+  id         String     @id @default(uuid())
   line1      String
   line2      String?
   city       String
@@ -90,24 +39,22 @@ model Address {
   postalCode String
   latitude   Float?
   longitude  Float?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  orders     Order[]
   patients   Patient[]
   pharmacies Pharmacy[]
-  orders     Order[]
 
   @@index([city, state])
 }
 
 model FileUpload {
-  id         String   @id @default(uuid())
-  fileUrl    String
-  fileType   String
-  mimeType   String
-  uploadedBy String
-  createdAt  DateTime @default(now())
-
+  id            String                 @id @default(uuid())
+  fileUrl       String
+  fileType      String
+  mimeType      String
+  uploadedBy    String
+  createdAt     DateTime               @default(now())
   user          User                   @relation(fields: [uploadedBy], references: [id])
   documents     PrescriptionDocument[]
   verifications VerificationRequest[]
@@ -116,36 +63,34 @@ model FileUpload {
 }
 
 model AdminProfile {
-  id             String   @id @default(uuid())
-  userId         String   @unique
+  id             String                @id @default(uuid())
+  userId         String                @unique
   name           String
-  employeeId     String   @unique
+  employeeId     String                @unique
   department     String
   contactDetails String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviews VerificationRequest[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews        VerificationRequest[]
 }
 
 model Patient {
-  id          String    @id @default(uuid())
-  name        String
-  dateOfBirth DateTime
-  gender      String
-  phone       String    @unique
-  email       String?   @unique
-  addressId   String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-
+  id             String           @id @default(uuid())
+  name           String
+  dateOfBirth    DateTime
+  gender         String
+  phone          String           @unique
+  email          String?          @unique
+  addressId      String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  allergies      Allergy[]
+  medicalHistory MedicalHistory[]
+  orders         Order[]
   address        Address          @relation(fields: [addressId], references: [id])
   prescriptions  Prescription[]
-  medicalHistory MedicalHistory[]
-  allergies      Allergy[]
-  orders         Order[]
 
   @@index([phone])
   @@index([addressId])
@@ -166,9 +111,8 @@ model DoctorProfile {
   consultationFee Int?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  prescriptions Prescription[]
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prescriptions   Prescription[]
 
   @@index([status])
 }
@@ -187,32 +131,30 @@ model PharmacistProfile {
   experience      String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pharmacies Pharmacy[]
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pharmacies      Pharmacy[]
 
   @@index([status])
 }
 
 model Pharmacy {
-  id            String         @id @default(uuid())
+  id            String              @id @default(uuid())
   name          String
-  email         String         @unique
+  email         String              @unique
   phone         String
   addressId     String
-  licenseNumber String         @unique
-  status        ApprovalStatus @default(PENDING)
+  licenseNumber String              @unique
+  status        ApprovalStatus      @default(PENDING)
   drugLicense   String?
   gst           String?
   ownerName     String?
   managerId     String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  address     Address             @relation(fields: [addressId], references: [id])
-  manager     PharmacistProfile   @relation(fields: [managerId], references: [id])
-  inventories PharmacyInventory[]
-  orders      Order[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  orders        Order[]
+  address       Address             @relation(fields: [addressId], references: [id])
+  manager       PharmacistProfile   @relation(fields: [managerId], references: [id])
+  inventories   PharmacyInventory[]
 
   @@index([status])
   @@index([addressId])
@@ -229,9 +171,8 @@ model VerificationRequest {
   reviewedBy           String?
   submittedAt          DateTime               @default(now())
   reviewedAt           DateTime?
-
-  document FileUpload?   @relation(fields: [supportingDocumentId], references: [id])
-  reviewer AdminProfile? @relation(fields: [reviewedBy], references: [id])
+  reviewer             AdminProfile?          @relation(fields: [reviewedBy], references: [id])
+  document             FileUpload?            @relation(fields: [supportingDocumentId], references: [id])
 
   @@index([entityType, entityId])
   @@index([status])
@@ -254,27 +195,26 @@ model MedicineManufacturer {
 }
 
 model Medicine {
-  id                   String   @id @default(uuid())
-  name                 String   @unique
+  id                   String               @id @default(uuid())
+  name                 String               @unique
   genericName          String?
   brandName            String?
   strength             String?
   dosageForm           String?
   packSize             String?
-  requiresPrescription Boolean  @default(false)
+  requiresPrescription Boolean              @default(false)
   description          String?
   imageUrl             String?
   barcode              String?
   categoryId           String
   manufacturerId       String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  category     MedicineCategory     @relation(fields: [categoryId], references: [id])
-  manufacturer MedicineManufacturer @relation(fields: [manufacturerId], references: [id])
-  inventories  PharmacyInventory[]
-  rxItems      PrescriptionItem[]
-  orderItems   OrderItem[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  category             MedicineCategory     @relation(fields: [categoryId], references: [id])
+  manufacturer         MedicineManufacturer @relation(fields: [manufacturerId], references: [id])
+  orderItems           OrderItem[]
+  inventories          PharmacyInventory[]
+  rxItems              PrescriptionItem[]
 
   @@index([name])
   @@index([categoryId])
@@ -282,43 +222,33 @@ model Medicine {
 }
 
 model PharmacyInventory {
-  id         String   @id @default(uuid())
-  pharmacyId String
-  medicineId String
-  stock      Int
-  minStock   Int
-  price      Float
-  status     String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  pharmacy     Pharmacy               @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
-  medicine     Medicine               @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  id           String                 @id @default(uuid())
+  pharmacyId   String
+  medicineId   String
+  stock        Int
+  minStock     Int
+  price        Float
+  status       String
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
   batches      InventoryBatch[]
   transactions InventoryTransaction[]
+  medicine     Medicine               @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  pharmacy     Pharmacy               @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
 
   @@unique([pharmacyId, medicineId])
   @@index([pharmacyId, medicineId])
 }
 
-enum TransactionType {
-  STOCK_IN
-  STOCK_OUT
-  ADJUSTMENT
-  RETURN
-  EXPIRED
-}
-
 model InventoryTransaction {
-  id          String          @id @default(uuid())
+  id          String            @id @default(uuid())
   inventoryId String
   quantity    Int
   type        TransactionType
   reason      String?
   performedBy String?
-  createdAt   DateTime        @default(now())
-
-  inventory PharmacyInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+  inventory   PharmacyInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
 
   @@index([inventoryId])
   @@index([type])
@@ -326,7 +256,7 @@ model InventoryTransaction {
 }
 
 model InventoryBatch {
-  id              String   @id @default(uuid())
+  id              String            @id @default(uuid())
   inventoryId     String
   batchNumber     String
   manufactureDate DateTime
@@ -334,10 +264,9 @@ model InventoryBatch {
   purchasePrice   Float
   sellingPrice    Float
   quantity        Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  inventory PharmacyInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  inventory       PharmacyInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
 
   @@index([inventoryId])
   @@index([expiryDate])
@@ -394,8 +323,7 @@ model Allergy {
   allergen  String
   severity  String
   createdAt DateTime @default(now())
-
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
 }
@@ -406,77 +334,72 @@ model MedicalHistory {
   condition   String
   diagnosedAt DateTime
   createdAt   DateTime @default(now())
-
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
 }
 
 model Prescription {
-  id        String             @id @default(uuid())
+  id        String                 @id @default(uuid())
   doctorId  String
   patientId String
-  status    PrescriptionStatus @default(PENDING)
+  status    PrescriptionStatus     @default(PENDING)
   notes     String?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  orders    Order[]
   doctor    DoctorProfile          @relation(fields: [doctorId], references: [id])
   patient   Patient                @relation(fields: [patientId], references: [id])
-  items     PrescriptionItem[]
-  orders    Order[]
   documents PrescriptionDocument[]
+  items     PrescriptionItem[]
 
   @@index([doctorId, patientId, status])
 }
 
 model PrescriptionDocument {
-  id             String   @id @default(uuid())
+  id             String       @id @default(uuid())
   prescriptionId String
   fileUploadId   String
-  createdAt      DateTime @default(now())
-
-  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-  fileUpload   FileUpload   @relation(fields: [fileUploadId], references: [id])
+  createdAt      DateTime     @default(now())
+  fileUpload     FileUpload   @relation(fields: [fileUploadId], references: [id])
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   @@index([prescriptionId])
   @@index([fileUploadId])
 }
 
 model PrescriptionItem {
-  id             String  @id @default(uuid())
+  id             String       @id @default(uuid())
   prescriptionId String
   medicineId     String
   dosage         String
   frequency      String?
   duration       String
-
-  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-  medicine     Medicine     @relation(fields: [medicineId], references: [id])
+  medicine       Medicine     @relation(fields: [medicineId], references: [id])
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   @@index([prescriptionId])
   @@index([medicineId])
 }
 
 model Order {
-  id                String      @id @default(uuid())
+  id                String        @id @default(uuid())
   prescriptionId    String
   pharmacyId        String?
   patientId         String
   shippingAddressId String
   totalCost         Float
-  status            OrderStatus @default(PENDING)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-
-  prescription Prescription  @relation(fields: [prescriptionId], references: [id])
-  pharmacy     Pharmacy?     @relation(fields: [pharmacyId], references: [id])
-  patient      Patient       @relation(fields: [patientId], references: [id])
-  address      Address       @relation(fields: [shippingAddressId], references: [id])
-  items        OrderItem[]
-  payment      Payment?
-  invoice      Invoice?
-  logs         ActivityLog[]
+  status            OrderStatus   @default(PENDING)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  logs              ActivityLog[]
+  invoice           Invoice?
+  patient           Patient       @relation(fields: [patientId], references: [id])
+  pharmacy          Pharmacy?     @relation(fields: [pharmacyId], references: [id])
+  prescription      Prescription  @relation(fields: [prescriptionId], references: [id])
+  address           Address       @relation(fields: [shippingAddressId], references: [id])
+  items             OrderItem[]
+  payment           Payment?
 
   @@index([status, createdAt])
   @@index([patientId])
@@ -486,14 +409,13 @@ model Order {
 }
 
 model OrderItem {
-  id         String @id @default(uuid())
+  id         String   @id @default(uuid())
   orderId    String
   medicineId String
   quantity   Int
   price      Float
-
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  medicine Medicine @relation(fields: [medicineId], references: [id])
+  medicine   Medicine @relation(fields: [medicineId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([medicineId])
@@ -510,8 +432,7 @@ model Payment {
   failureReason  String?
   paidAt         DateTime?
   createdAt      DateTime      @default(now())
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([status])
 }
@@ -522,8 +443,7 @@ model Invoice {
   invoiceNumber String   @unique
   pdfUrl        String?
   createdAt     DateTime @default(now())
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
@@ -535,8 +455,7 @@ model Notification {
   title     String?
   body      String?
   createdAt DateTime         @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
 }
@@ -547,8 +466,7 @@ model AuditLog {
   action    String
   details   String?
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([createdAt])
@@ -560,8 +478,65 @@ model ActivityLog {
   status    String
   notes     String?
   createdAt DateTime @default(now())
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+enum Role {
+  DOCTOR
+  PHARMACIST
+  ADMIN
+}
+
+enum ApprovalStatus {
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum PrescriptionStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  DISPENSED
+}
+
+enum OrderStatus {
+  PENDING
+  PACKING
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum VerificationEntityType {
+  DOCTOR
+  PHARMACIST
+  PHARMACY
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+}
+
+enum TransactionType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  RETURN
+  EXPIRED
 }

@@ -359,8 +359,27 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
               <div className="flex items-center justify-between mb-1">
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151' }}>Password</label>
                 {tab === 'login' && (
-                  <button type="button" style={{ fontSize: '0.775rem', color: '#2563EB', fontWeight: 500 }}
-                    onClick={() => setForgotSent(true)}>
+                  <button
+                    type="button"
+                    style={{ fontSize: '0.775rem', color: '#2563EB', fontWeight: 500 }}
+                    onClick={async () => {
+                      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        setErrors((prev) => ({ ...prev, email: 'Please enter a valid email address to reset password' }));
+                        return;
+                      }
+                      setErrors((prev) => ({ ...prev, email: undefined }));
+                      try {
+                        await fetch('/api/auth/reset-password', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email }),
+                        });
+                        setForgotSent(true);
+                      } catch (err) {
+                        console.error('Failed to request password reset', err);
+                      }
+                    }}
+                  >
                     Forgot password?
                   </button>
                 )}
@@ -368,7 +387,7 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
               {forgotSent && tab === 'login' && (
                 <div className="mb-2 p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#F0FDF4' }}>
                   <CheckCircle className="w-3.5 h-3.5" style={{ color: '#22C55E' }} />
-                  <span style={{ fontSize: '0.75rem', color: '#22C55E' }}>Reset link sent to {email || 'your email'}!</span>
+                  <span style={{ fontSize: '0.75rem', color: '#22C55E' }}>Reset link sent to {email}!</span>
                 </div>
               )}
               <div className="relative">
