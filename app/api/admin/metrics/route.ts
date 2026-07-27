@@ -8,6 +8,10 @@ export async function GET(request: NextRequest) {
   if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
 
   try {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
     const [
       doctorCount,
       pharmacistCount,
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest) {
       prisma.pharmacistProfile.count({ where: { status: 'PENDING' } }),
       prisma.pharmacy.count({ where: { status: 'PENDING' } }),
       prisma.prescription.findMany({
-        take: 7,
+        where: { createdAt: { gte: sevenDaysAgo } },
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),

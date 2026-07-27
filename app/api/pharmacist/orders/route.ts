@@ -9,7 +9,14 @@ export async function GET(request: NextRequest) {
   if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
 
   try {
+    const pharmacy = await prisma.pharmacy.findFirst({
+      where: { managerId: auth.user.profileId },
+    });
+
+    if (!pharmacy) return jsonSuccess([]);
+
     const orders = await prisma.order.findMany({
+      where: { pharmacyId: pharmacy.id },
       orderBy: { createdAt: 'desc' },
       include: {
         patient: true,
@@ -40,9 +47,30 @@ export async function PATCH(request: NextRequest) {
   if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
 
   try {
+    const pharmacy = await prisma.pharmacy.findFirst({
+      where: { managerId: auth.user.profileId },
+    });
+    if (!pharmacy) return jsonError('Pharmacist has no assigned pharmacy', 403);
+
     const body = await request.json();
     if (!body.orderId || !body.status) {
       return jsonError('orderId and status required', 400);
+    }
+
+    if (!Object.values(OrderStatus).includes(body.status as OrderStatus)) {
+      return jsonError('Invalid order status', 400);
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: body.orderId },
+    });
+
+    if (!order) {
+      return jsonError('Order not found', 404);
+    }
+
+    if (order.pharmacyId !== pharmacy.id) {
+      return jsonError('Forbidden: Order does not belong to your pharmacy', 403);
     }
 
     const updated = await prisma.order.update({

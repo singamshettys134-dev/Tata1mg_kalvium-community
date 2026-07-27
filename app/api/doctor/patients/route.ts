@@ -12,14 +12,19 @@ export async function GET(request: NextRequest) {
     const search = sp.get('search') || undefined;
 
     const patients = await prisma.patient.findMany({
-      where: search
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { phone: { contains: search, mode: 'insensitive' } },
-            ],
-          }
-        : {},
+      where: {
+        prescriptions: {
+          some: { doctorId: auth.user.profileId },
+        },
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: { updatedAt: 'desc' },
       include: {
         prescriptions: {

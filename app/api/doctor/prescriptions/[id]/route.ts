@@ -18,5 +18,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   });
 
   if (!prescription) return jsonError('Prescription not found', 404);
+  if (prescription.doctorId !== auth.user.profileId) {
+    return jsonError('Forbidden', 403);
+  }
   return jsonSuccess(prescription);
 }

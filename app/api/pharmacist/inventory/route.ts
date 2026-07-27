@@ -19,11 +19,10 @@ export async function GET(request: NextRequest) {
     const pharmacy = await prisma.pharmacy.findFirst({
       where: { managerId: auth.user.profileId },
     });
-
-    const where = pharmacy ? { pharmacyId: pharmacy.id } : {};
+    if (!pharmacy) return jsonSuccess([]);
 
     const inventoryItems = await prisma.pharmacyInventory.findMany({
-      where,
+      where: { pharmacyId: pharmacy.id },
       include: {
         medicine: { include: { category: true } },
       },

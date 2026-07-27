@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
     const existing = await prisma.pharmacistProfile.findUnique({ where: { email } });
     if (existing) return jsonError('A pharmacist with this email already exists', 409);
 
-    const passwordHash = await bcrypt.hash(Math.random().toString(36).slice(-10), 10);
+    const tempPassword = Math.random().toString(36).slice(-10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
       data: { userId: auth.user.userId, action: 'CREATE_PHARMACIST', details: `Created pharmacist profile for ${email}` },
     });
 
-    return jsonSuccess(user.pharmacistProfile, 201);
+    return jsonSuccess({ ...user.pharmacistProfile, tempPassword }, 201);
   } catch (err) {
     console.error('[POST /api/admin/pharmacists]', err);
     return jsonError('Internal server error', 500);
