@@ -19,7 +19,9 @@ import {
 
 type PharmView = 'dashboard' | 'incoming' | 'verified' | 'inventory' | 'orders' | 'customers' | 'notifications' | 'reports' | 'profile';
 
-interface PharmacistPortalProps {}
+interface PharmacistPortalProps {
+  onBack?: () => void;
+}
 
 type WeeklyOrders = { day: string; orders: number; revenue: number };
 type MonthlyRevenue = { month: string; revenue: number };

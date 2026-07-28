@@ -18,7 +18,9 @@ import {
 
 type DoctorView = 'dashboard' | 'patients' | 'approved' | 'rejected' | 'history' | 'notifications' | 'profile';
 
-interface DoctorPortalProps {}
+interface DoctorPortalProps {
+  onBack?: () => void;
+}
 
 type WeeklyData = { day: string; prescriptions: number };
 type PatientData = { id: string; name: string; age: number; gender: string; condition: string; lastVisit: string; status: string; phone?: string };
@@ -53,7 +55,6 @@ export function DoctorPortal({}: DoctorPortalProps) {
   const [notifList, setNotifList] = useState<NotificationData[]>(notifications);
   const [patientList, setPatientList] = useState<PatientData[]>(patients);
   const [approvedRxList, setApprovedRxList] = useState<ApprovedRxData[]>(approvedRx);
-  const [rejectedRxList, setRejectedRxList] = useState<RejectedRxData[]>(rejectedRx);
   const [rxMedicines, setRxMedicines] = useState([{ name: '', dose: '', freq: '', duration: '' }]);
 
   const markAllRead = () => {
@@ -70,30 +71,7 @@ export function DoctorPortal({}: DoctorPortalProps) {
         ]);
 
         if (Array.isArray(patientsRes.data)) setPatientList(patientsRes.data);
-        if (Array.isArray(rxRes.data)) {
-          const approved = rxRes.data
-            .filter((rx: any) => rx.status === 'VERIFIED' || rx.status === 'DISPENSED' || rx.status === 'APPROVED')
-            .map((rx: any) => ({
-              id: rx.id,
-              patient: rx.patient,
-              approvedAt: rx.approvedAt || rx.createdAt || '',
-              medicines: rx.medicines || '',
-              duration: rx.duration || '30 days',
-            }));
-
-          const rejected = rxRes.data
-            .filter((rx: any) => rx.status === 'REJECTED')
-            .map((rx: any) => ({
-              id: rx.id,
-              patient: rx.patient,
-              rejectedAt: rx.rejectedAt || rx.updatedAt || '',
-              reason: rx.notes || 'Prescription rejected',
-              medicines: rx.medicines || '',
-            }));
-
-          setApprovedRxList(approved);
-          setRejectedRxList(rejected);
-        }
+        if (Array.isArray(rxRes.data)) setApprovedRxList(rxRes.data);
         if (Array.isArray(notifRes.data)) setNotifList(notifRes.data);
       } catch (e) {
         console.error('Failed to load doctor portal data', e);
@@ -345,7 +323,7 @@ export function DoctorPortal({}: DoctorPortalProps) {
     <div className="space-y-6">
       <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Rejected Prescriptions</h2>
       <div className="space-y-4">
-        {rejectedRxList.map(rx => (
+        {rejectedRx.map(rx => (
           <Card key={rx.id} className="border-0 shadow-sm border-l-4" style={{ borderLeftColor: '#FF6B6B' }}>
             <CardContent className="p-5">
               <div className="flex items-start justify-between gap-4">
