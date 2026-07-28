@@ -35,3 +35,7 @@ next-env.d.ts
 
 # prisma
 /prisma/dev.db
+
+# npm config - DO NOT commit .npmrc to repo
+# This breaks CI/CD in shared environments
+.npmrc
