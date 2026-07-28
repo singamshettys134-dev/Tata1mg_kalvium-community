@@ -20,7 +20,9 @@ import {
 
 type AdminView = 'overview' | 'doctors' | 'pharmacists' | 'pharmacies' | 'analytics' | 'notifications' | 'settings';
 
-interface AdminPortalProps {}
+interface AdminPortalProps {
+  onBack?: () => void;
+}
 
 const dailyPrescriptions = [
   { date: 'Jan 10', count: 245 }, { date: 'Jan 11', count: 312 },
@@ -149,61 +151,17 @@ export function AdminPortal({}: AdminPortalProps) {
     setLoading(true);
     try {
       const [docsRes, pharmsRes, phrmciesRes, notifsRes, metricsRes] = await Promise.all([
-        fetch('/api/admin/doctors').then((r) => r.json()).catch(() => ({})),
-        fetch('/api/admin/pharmacists').then((r) => r.json()).catch(() => ({})),
-        fetch('/api/admin/pharmacies').then((r) => r.json()).catch(() => ({})),
-        fetch('/api/admin/notifications').then((r) => r.json()).catch(() => ({})),
-        fetch('/api/admin/metrics').then((r) => r.json()).catch(() => ({})),
+        fetch('/api/admin/doctors').then((r) => r.json()),
+        fetch('/api/admin/pharmacists').then((r) => r.json()),
+        fetch('/api/admin/pharmacies').then((r) => r.json()),
+        fetch('/api/admin/notifications').then((r) => r.json()),
+        fetch('/api/admin/metrics').then((r) => r.json()),
       ]);
 
-      const normalizeRows = (payload: any) => {
-        const list = payload?.data?.data ?? payload?.data ?? payload;
-        return Array.isArray(list) ? list : [];
-      };
-
-      const mappedDoctors = normalizeRows(docsRes).map((item: any) => ({
-        id: item.id,
-        name: item.name || item.email || 'Doctor',
-        regNo: item.regNo || item.licenseNumber || 'N/A',
-        hospital: item.hospital || 'Pending review',
-        specialization: item.specialization || 'General Medicine',
-        licenseFile: item.licenseFile || 'license.pdf',
-        status: item.status || 'PENDING',
-      }));
-
-      const mappedPharmacists = normalizeRows(pharmsRes).map((item: any) => ({
-        id: item.id,
-        name: item.name || item.email || 'Pharmacist',
-        pharmacyLicense: item.pharmacyLicense || item.licenseNumber || 'N/A',
-        regNo: item.regNo || 'N/A',
-        experience: item.experience || 'Pending review',
-        status: item.status || 'PENDING',
-      }));
-
-      const mappedPharmacies = normalizeRows(phrmciesRes).map((item: any) => ({
-        id: item.id,
-        name: item.name || item.email || 'Pharmacy',
-        drugLicense: item.drugLicense || item.licenseNumber || 'N/A',
-        gst: item.gst || 'N/A',
-        address: item.address || item.city || 'Pending review',
-        owner: item.owner || 'Pending review',
-        status: item.status || 'PENDING',
-      }));
-
-      const mappedNotifications = normalizeRows(notifsRes).map((item: any) => ({
-        id: item.id || item._id || String(Date.now()),
-        title: item.title || item.message || 'New notification',
-        body: item.body || item.message || 'Review pending action',
-        time: item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Just now',
-        read: Boolean(item.read),
-        color: item.type === 'error' ? '#FF6B6B' : item.type === 'success' ? '#00B894' : '#2563EB',
-      }));
-
-      if (mappedDoctors.length) setDoctorList(mappedDoctors);
-      if (mappedPharmacists.length) setPharmList(mappedPharmacists);
-      if (mappedPharmacies.length) setPharmacyList(mappedPharmacies);
-      if (mappedNotifications.length) setNotifList(mappedNotifications);
-
+      if (docsRes.data?.data) setDoctorList(docsRes.data.data);
+      if (pharmsRes.data?.data) setPharmList(pharmsRes.data.data);
+      if (phrmciesRes.data?.data) setPharmacyList(phrmciesRes.data.data);
+      if (notifsRes.data?.data) setNotifList(notifsRes.data.data);
       if (metricsRes.data) {
         setMetrics(metricsRes.data.counts);
         if (Array.isArray(metricsRes.data.dailyPrescriptions)) setLiveDaily(metricsRes.data.dailyPrescriptions);
@@ -298,11 +256,83 @@ export function AdminPortal({}: AdminPortalProps) {
     }
   };
 
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [doctorsRes, pharmacistsRes, pharmaciesRes, notificationsRes] = await Promise.all([
+          fetch('/api/admin/doctors'),
+          fetch('/api/admin/pharmacists'),
+          fetch('/api/admin/pharmacies'),
+          fetch('/api/admin/notifications'),
+        ]);
+
+        const [doctorsPayload, pharmacistsPayload, pharmaciesPayload, notificationsPayload] = await Promise.all([
+          doctorsRes.json().catch(() => ({})),
+          pharmacistsRes.json().catch(() => ({})),
+          pharmaciesRes.json().catch(() => ({})),
+          notificationsRes.json().catch(() => ({})),
+        ]);
+
+        const normalizeRows = (payload: any) => {
+          const list = payload?.data?.data ?? payload?.data ?? payload;
+          return Array.isArray(list) ? list : [];
+        };
+
+        const mappedDoctors = normalizeRows(doctorsPayload).map((item: any) => ({
+          id: item.id,
+          name: item.name || item.email || 'Doctor',
+          regNo: item.regNo || item.licenseNumber || 'N/A',
+          hospital: item.hospital || 'Pending review',
+          specialization: item.specialization || 'General Medicine',
+          licenseFile: item.licenseFile || 'license.pdf',
+          status: item.status ? item.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Pending',
+        }));
+
+        const mappedPharmacists = normalizeRows(pharmacistsPayload).map((item: any) => ({
+          id: item.id,
+          name: item.name || item.email || 'Pharmacist',
+          pharmacyLicense: item.pharmacyLicense || item.licenseNumber || 'N/A',
+          regNo: item.regNo || 'N/A',
+          experience: item.experience || 'Pending review',
+          status: item.status ? item.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Pending',
+        }));
+
+        const mappedPharmacies = normalizeRows(pharmaciesPayload).map((item: any) => ({
+          id: item.id,
+          name: item.name || item.email || 'Pharmacy',
+          drugLicense: item.drugLicense || item.licenseNumber || 'N/A',
+          gst: item.gst || 'N/A',
+          address: item.address || item.city || 'Pending review',
+          owner: item.owner || 'Pending review',
+          status: item.status ? item.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Pending',
+        }));
+
+        const mappedNotifications = normalizeRows(notificationsPayload).map((item: any) => ({
+          id: item.id || item._id || Date.now(),
+          title: item.title || item.message || 'New notification',
+          body: item.body || item.message || 'Review pending action',
+          time: item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Just now',
+          read: Boolean(item.read),
+          color: item.type === 'error' ? '#FF6B6B' : item.type === 'success' ? '#00B894' : '#2563EB',
+        }));
+
+        if (mappedDoctors.length) setDoctorList(mappedDoctors);
+        if (mappedPharmacists.length) setPharmList(mappedPharmacists);
+        if (mappedPharmacies.length) setPharmacyList(mappedPharmacies);
+        if (mappedNotifications.length) setNotifList(mappedNotifications);
+      } catch {
+        // Keep the existing static fallback data when the backend is unavailable.
+      }
+    };
+
+    loadData();
+  }, []);
+
   const navItems = [
     { id: 'overview' as AdminView, label: 'Overview', icon: LayoutDashboard },
-    { id: 'doctors' as AdminView, label: 'Doctor Verification', icon: Stethoscope, badge: doctorList.filter(d => d.status === 'PENDING' || d.status === 'Pending').length },
-    { id: 'pharmacists' as AdminView, label: 'Pharmacist Verification', icon: Pill, badge: pharmList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length },
-    { id: 'pharmacies' as AdminView, label: 'Pharmacy Verification', icon: Building2, badge: pharmacyList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length },
+    { id: 'doctors' as AdminView, label: 'Doctor Verification', icon: Stethoscope, badge: doctorList.filter(d => d.status === 'Pending').length },
+    { id: 'pharmacists' as AdminView, label: 'Pharmacist Verification', icon: Pill, badge: pharmList.filter(p => p.status === 'Pending').length },
+    { id: 'pharmacies' as AdminView, label: 'Pharmacy Verification', icon: Building2, badge: pharmacyList.filter(p => p.status === 'Pending').length },
     { id: 'analytics' as AdminView, label: 'Analytics', icon: TrendingUp },
     { id: 'notifications' as AdminView, label: 'Notifications', icon: Bell, badge: notifList.filter(n => !n.read).length },
     { id: 'settings' as AdminView, label: 'Settings', icon: Settings },
