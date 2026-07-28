@@ -1,6 +1,5 @@
 name: CI/CD
 
-
 on:
   push:
     branches: [main]
@@ -39,8 +38,6 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Dummy values so `next build` can statically evaluate pages.
-          # Real secrets are only needed at runtime / migrate step, not build time.
           DATABASE_URL: "postgresql://user:password@host/dbname?sslmode=require"
           NEXTAUTH_URL: "http://localhost:3000"
           NEXTAUTH_SECRET: "build-placeholder"
