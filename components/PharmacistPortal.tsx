@@ -622,7 +622,7 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
     <PortalLayout
       title="Pharmacist Portal"
       activeView={activeView}
-      onNavItemClick={setActiveView}
+      onNavItemClick={(view) => setActiveView(view)}
       navItems={navItems}
       notificationCount={unreadNotifications}
       onNotificationClick={() => setActiveView('notifications')}

@@ -590,7 +590,7 @@ export function DoctorPortal({}: DoctorPortalProps) {
     <PortalLayout
       title="Doctor Portal"
       activeView={activeView}
-      onNavItemClick={setActiveView}
+      onNavItemClick={(view) => setActiveView(view)}
       navItems={navItems}
       notificationCount={unreadNotifications}
       onNotificationClick={() => setActiveView('notifications')}

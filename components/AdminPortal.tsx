@@ -810,7 +810,7 @@ export function AdminPortal({}: AdminPortalProps) {
     <PortalLayout
       title="Admin Dashboard"
       activeView={activeView}
-      onNavItemClick={setActiveView}
+      onNavItemClick={(view) => setActiveView(view)}
       navItems={navItems}
       notificationCount={unreadNotifications}
       onNotificationClick={() => setActiveView('notifications')}
