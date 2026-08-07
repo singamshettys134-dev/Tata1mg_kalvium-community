@@ -1,7 +1,17 @@
 import jwt from 'jsonwebtoken';
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE } from './constants';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'prescriptrack-dev-secret';
-const SESSION_COOKIE = 'prescriptrack_session';
+// SECURITY: never fall back to a hardcoded secret. A guessable default lets
+// anyone forge a valid session token (including ADMIN role) for any account.
+// Every environment (local, CI, and production) must set JWT_SECRET explicitly.
+if (!process.env.JWT_SECRET) {
+  throw new Error(
+    'JWT_SECRET environment variable is not set. Refusing to start with an insecure default — set JWT_SECRET to a long, random value.',
+  );
+}
+
+const JWT_SECRET: string = process.env.JWT_SECRET;
+const SESSION_COOKIE = SESSION_COOKIE_NAME;
 
 export interface TokenPayload {
   userId: string;
@@ -68,6 +78,6 @@ export function requireRole(
 }
 
 // ─── Cookie builder ─────────────────────────────────────────────────────────────
-
-export const SESSION_COOKIE_NAME = SESSION_COOKIE;
-export const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
+// Re-exported from ./constants so existing `import { SESSION_COOKIE_NAME } from
+// '@/lib/auth'` call sites (the API routes) keep working unchanged.
+export { SESSION_COOKIE_NAME, SESSION_MAX_AGE };
