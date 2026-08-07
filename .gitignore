@@ -39,3 +39,10 @@ next-env.d.ts
 # npm config - DO NOT commit .npmrc to repo
 # This breaks CI/CD in shared environments
 .npmrc
+
+# local audit/patch artifacts — not part of the app
+prescriptrack-fixes.bundle
+prescriptrack-patched.zip
+prescriptrack-security-fixes.patch
+prescriptrack-cicd-fix.patch
+

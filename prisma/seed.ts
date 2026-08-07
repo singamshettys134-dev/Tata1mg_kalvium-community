@@ -1,6 +1,20 @@
 import { PrismaClient, Role, ApprovalStatus, TransactionType, VerificationEntityType, NotificationType } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+
+// BUG FIX: the previous seed used placeholder strings like
+// '$2b$10$xyzDemoHashForAdminUser1mgStyleSecret' as passwordHash values.
+// Those are not valid bcrypt hashes, so bcrypt.compare() in
+// app/api/auth/login/route.ts could never match them — none of the seeded
+// demo accounts (admin@meditrack.com, doctor@meditrack.com,
+// pharmacist@meditrack.com) could actually log in.
+//
+// This is a demo-only password, intentionally simple and printed to the
+// console below. Do not reuse it, and never seed real hashed passwords into
+// source control for a production database.
+const DEMO_PASSWORD = 'Demo@12345';
+const DEMO_PASSWORD_HASH = bcrypt.hashSync(DEMO_PASSWORD, 10);
 
 async function main() {
   console.log('Seeding lookup tables (Categories & Manufacturers)...');
@@ -68,7 +82,7 @@ async function main() {
     update: {},
     create: {
       email: 'admin@meditrack.com',
-      passwordHash: '$2b$10$xyzDemoHashForAdminUser1mgStyleSecret',
+      passwordHash: DEMO_PASSWORD_HASH,
       role: Role.ADMIN,
       adminProfile: {
         create: {
@@ -89,7 +103,7 @@ async function main() {
     update: {},
     create: {
       email: 'doctor@meditrack.com',
-      passwordHash: '$2b$10$xyzDemoHashForDoctorUser1mgStyleSecret',
+      passwordHash: DEMO_PASSWORD_HASH,
       role: Role.DOCTOR,
       doctorProfile: {
         create: {
@@ -117,7 +131,7 @@ async function main() {
     update: {},
     create: {
       email: 'pharmacist@meditrack.com',
-      passwordHash: '$2b$10$xyzDemoHashForPharmacistUser1mgStyleSecret',
+      passwordHash: DEMO_PASSWORD_HASH,
       role: Role.PHARMACIST,
       pharmacistProfile: {
         create: {
@@ -310,6 +324,12 @@ async function main() {
   });
 
   console.log('Seeding completed successfully!');
+  console.log('');
+  console.log('Demo login credentials (all roles share the same password):');
+  console.log('  admin@meditrack.com      / ' + DEMO_PASSWORD);
+  console.log('  doctor@meditrack.com     / ' + DEMO_PASSWORD);
+  console.log('  pharmacist@meditrack.com / ' + DEMO_PASSWORD);
+  console.log('These are for local/demo use only — never seed real credentials this way.');
 }
 
 main()

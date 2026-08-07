@@ -8,7 +8,19 @@ export async function GET(request: NextRequest) {
   if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
 
   try {
+    // SECURITY: reports must be scoped to the requesting pharmacist's own
+    // pharmacy. Without this filter, any pharmacist could see order volume
+    // and revenue for every pharmacy on the platform (cross-tenant data leak).
+    const pharmacy = await prisma.pharmacy.findFirst({
+      where: { managerId: auth.user.profileId },
+    });
+
+    if (!pharmacy) {
+      return jsonSuccess({ weeklyOrders: [], totalOrders: 0 });
+    }
+
     const orders = await prisma.order.findMany({
+      where: { pharmacyId: pharmacy.id },
       take: 100,
       orderBy: { createdAt: 'desc' },
       select: {
