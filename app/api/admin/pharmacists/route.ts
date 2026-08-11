@@ -1,93 +1,49 @@
 import { NextRequest } from 'next/server';
-import { ApprovalStatus, Prisma } from '@prisma/client';
+import { promises as fs } from 'fs';
+import path from 'path';
 import prisma from '@/lib/prisma';
 import { requireRole } from '@/lib/auth';
-import { CreatePharmacistSchema, ListQuerySchema } from '@/lib/validationSchemas';
 import { jsonError, jsonSuccess } from '@/lib/apiResponse';
-import bcrypt from 'bcryptjs';
 
-export async function GET(request: NextRequest) {
+const VALID_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = requireRole(request, 'ADMIN');
   if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
 
   try {
-    const sp = request.nextUrl.searchParams;
-    const parsed = ListQuerySchema.safeParse({
-      page: sp.get('page') || undefined,
-      limit: sp.get('limit') || undefined,
-      search: sp.get('search') || undefined,
-      status: sp.get('status') || undefined,
-      sortBy: sp.get('sortBy') || undefined,
-      sortOrder: sp.get('sortOrder') || undefined,
+    const pharmacist = await prisma.pharmacistProfile.findUnique({ where: { id: params.id } });
+    if (!pharmacist) return jsonError('Pharmacist not found', 404);
+
+    const formData = await request.formData();
+    const file = formData.get('license') as File | null;
+    if (!file) return jsonError('No file provided');
+    if (!VALID_MIME_TYPES.includes(file.type)) return jsonError('Invalid file type. Accepted: PDF, JPG, PNG, WEBP');
+    if (file.size > MAX_FILE_SIZE) return jsonError('File size must be less than 5 MB');
+
+    const ext = path.extname(file.name) || '.bin';
+    const fileName = `pharmacist_${params.id}_${Date.now()}${ext}`;
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'licenses', 'pharmacists');
+    await fs.mkdir(uploadDir, { recursive: true });
+    await fs.writeFile(path.join(uploadDir, fileName), new Uint8Array(await file.arrayBuffer()));
+
+    const fileUrl = `/uploads/licenses/pharmacists/${fileName}`;
+    const upload = await prisma.fileUpload.create({
+      data: { fileUrl, fileType: 'LICENSE', mimeType: file.type, uploadedBy: auth.user.userId },
     });
-    if (!parsed.success) return jsonError(parsed.error.errors[0].message);
 
-    const { page = 1, limit = 10, search, status, sortBy = 'date', sortOrder = 'desc' } = parsed.data;
-
-    const where: Prisma.PharmacistProfileWhereInput = {};
-    if (status) where.status = status as ApprovalStatus;
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { licenseNumber: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    const orderBy: Prisma.PharmacistProfileOrderByWithRelationInput =
-      sortBy === 'name' ? { name: sortOrder } :
-      sortBy === 'status' ? { status: sortOrder } :
-      { createdAt: sortOrder };
-
-    const [data, total] = await Promise.all([
-      prisma.pharmacistProfile.findMany({ where, orderBy, skip: (page - 1) * limit, take: limit }),
-      prisma.pharmacistProfile.count({ where }),
-    ]);
-
-    return jsonSuccess({
-      data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    });
-  } catch (err) {
-    console.error('[GET /api/admin/pharmacists]', err);
-    return jsonError('Internal server error', 500);
-  }
-}
-
-export async function POST(request: NextRequest) {
-  const auth = requireRole(request, 'ADMIN');
-  if (auth.error) return jsonError(auth.error, auth.error === 'Unauthorized' ? 401 : 403);
-
-  try {
-    const body = await request.json();
-    const parsed = CreatePharmacistSchema.safeParse(body);
-    if (!parsed.success) return jsonError(parsed.error.errors[0].message);
-
-    const { name, email, licenseNumber, phone, qualifications } = parsed.data;
-
-    const existing = await prisma.pharmacistProfile.findUnique({ where: { email } });
-    if (existing) return jsonError('A pharmacist with this email already exists', 409);
-
-    const tempPassword = Math.random().toString(36).slice(-10);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        role: 'PHARMACIST',
-        pharmacistProfile: { create: { name, email, licenseNumber, phone, qualifications, status: 'PENDING' } },
-      },
-      include: { pharmacistProfile: true },
+    await prisma.verificationRequest.create({
+      data: { entityType: 'PHARMACIST', entityId: params.id, status: 'UNDER_REVIEW', supportingDocumentId: upload.id },
     });
 
     await prisma.auditLog.create({
-      data: { userId: auth.user.userId, action: 'CREATE_PHARMACIST', details: `Created pharmacist profile for ${email}` },
+      data: { userId: auth.user.userId, action: 'UPLOAD_PHARMACIST_LICENSE', details: `Uploaded license for pharmacist ${params.id}` },
     });
 
-    return jsonSuccess({ ...user.pharmacistProfile, tempPassword }, 201);
+    return jsonSuccess({ fileUrl, fileName, fileSize: file.size, uploadId: upload.id }, 201);
   } catch (err) {
-    console.error('[POST /api/admin/pharmacists]', err);
-    return jsonError('Internal server error', 500);
+    console.error('[POST /api/admin/pharmacists/[id]/license]', err);
+    return jsonError('Failed to upload file', 500);
   }
 }

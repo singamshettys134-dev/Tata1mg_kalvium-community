@@ -145,17 +145,19 @@ export function AdminPortal({}: AdminPortalProps) {
   const [metrics, setMetrics] = useState<MetricCounts | null>(null);
   const [liveDaily, setLiveDaily] = useState<DailyPoint[]>(dailyPrescriptions);
   const [liveTopDoctors, setLiveTopDoctors] = useState<TopDoctorPoint[]>(topDoctors);
+  const [adminProfile, setAdminProfile] = useState<{ name: string; employeeId: string; department: string; email?: string; user?: { email: string } } | null>(null);
 
   // Fetch real DB data
   const refreshData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [docsRes, pharmsRes, phrmciesRes, notifsRes, metricsRes] = await Promise.all([
+      const [docsRes, pharmsRes, phrmciesRes, notifsRes, metricsRes, profileRes] = await Promise.all([
         fetch('/api/admin/doctors').then((r) => r.json()),
         fetch('/api/admin/pharmacists').then((r) => r.json()),
         fetch('/api/admin/pharmacies').then((r) => r.json()),
         fetch('/api/admin/notifications').then((r) => r.json()),
         fetch('/api/admin/metrics').then((r) => r.json()),
+        fetch('/api/admin/profile').then((r) => r.json()),
       ]);
 
       if (docsRes.data?.data) setDoctorList(docsRes.data.data);
@@ -167,6 +169,7 @@ export function AdminPortal({}: AdminPortalProps) {
         if (Array.isArray(metricsRes.data.dailyPrescriptions)) setLiveDaily(metricsRes.data.dailyPrescriptions);
         if (Array.isArray(metricsRes.data.topDoctors)) setLiveTopDoctors(metricsRes.data.topDoctors);
       }
+      if (profileRes.data) setAdminProfile(profileRes.data);
     } catch (e) {
       console.error('Failed to fetch admin data', e);
     } finally {
@@ -345,9 +348,9 @@ export function AdminPortal({}: AdminPortalProps) {
     brandAccentColor: '#FF6B6B',
     background: '#1A1A2E',
     borderColor: '#2D2D4E',
-    userName: 'Super Admin',
+    userName: adminProfile?.name || 'Loading…',
     userRole: 'Admin',
-    userSubtitle: 'admin@meditrack.in',
+    userSubtitle: adminProfile?.email || adminProfile?.user?.email || adminProfile?.department || '',
     userIcon: <Shield className="w-5 h-5 text-white" />,
     userIconBg: '#FF6B6B',
     navTextColor: '#94A3B8',

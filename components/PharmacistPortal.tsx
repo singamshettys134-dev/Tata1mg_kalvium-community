@@ -31,6 +31,18 @@ type IncomingPrescription = { id: string; patient: string; doctor: string; recei
 type OrderItem = { id: string; patient: string; rx: string; date: string; total: string; status: string; address: string };
 type CustomerItem = { id: string; name: string; phone: string; orders: number; lastOrder: string; totalSpend: string };
 type NotificationItem = { id: string; title: string; body: string; time: string; read: boolean; color: string };
+type PharmacistProfileData = {
+  name: string;
+  email?: string;
+  licenseNumber: string;
+  phone: string;
+  qualifications: string;
+  regNo?: string | null;
+  experience?: string | null;
+  status?: string;
+  pharmacies?: { id: string; name: string }[];
+  user?: { email: string; createdAt: string };
+};
 
 const weeklyOrders: WeeklyOrders[] = [];
 const monthlyRevenue: MonthlyRevenue[] = [];
@@ -67,16 +79,18 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
   const [orderList, setOrderList] = useState<OrderItem[]>(orders);
 
   const [weeklyData, setWeeklyData] = useState<WeeklyOrders[]>(weeklyOrders);
+  const [pharmacistProfile, setPharmacistProfile] = useState<PharmacistProfileData | null>(null);
 
   React.useEffect(() => {
     async function loadPharmData() {
       try {
-        const [rxRes, invRes, ordRes, notifRes, repRes] = await Promise.all([
+        const [rxRes, invRes, ordRes, notifRes, repRes, profileRes] = await Promise.all([
           fetch('/api/pharmacist/prescriptions').then((r) => r.json()),
           fetch('/api/pharmacist/inventory').then((r) => r.json()),
           fetch('/api/pharmacist/orders').then((r) => r.json()),
           fetch('/api/pharmacist/notifications').then((r) => r.json()),
           fetch('/api/pharmacist/reports').then((r) => r.json()),
+          fetch('/api/pharmacist/profile').then((r) => r.json()),
         ]);
 
         if (Array.isArray(rxRes.data)) setIncomingList(rxRes.data);
@@ -84,6 +98,7 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
         if (Array.isArray(ordRes.data)) setOrderList(ordRes.data);
         if (Array.isArray(notifRes.data)) setNotifList(notifRes.data);
         if (repRes.data?.weeklyOrders) setWeeklyData(repRes.data.weeklyOrders);
+        if (profileRes.data) setPharmacistProfile(profileRes.data);
       } catch (e) {
         console.error('Failed to load pharmacist portal data', e);
       }
@@ -96,7 +111,7 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
     { id: 'incoming' as PharmView, label: 'Incoming Prescriptions', icon: FileText, badge: incomingList.filter(r => r.status === 'Pending').length },
     { id: 'verified' as PharmView, label: 'Verified Prescriptions', icon: CheckCircle },
     { id: 'inventory' as PharmView, label: 'Medicine Inventory', icon: Package },
-    { id: 'orders' as PharmView, label: 'Orders', icon: ShoppingCart, badge: 3 },
+    { id: 'orders' as PharmView, label: 'Orders', icon: ShoppingCart, badge: orderList.filter(o => o.status === 'Processing' || o.status === 'PENDING').length },
     { id: 'customers' as PharmView, label: 'Customers', icon: Users },
     { id: 'notifications' as PharmView, label: 'Notifications', icon: Bell, badge: notifList.filter(n => !n.read).length },
     { id: 'reports' as PharmView, label: 'Reports', icon: BarChart2 },
@@ -110,9 +125,9 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
     brandAccentColor: '#00B894',
     background: '#134e4a',
     borderColor: '#0f3d39',
-    userName: 'Priya Sharma',
-    userRole: 'Senior Pharmacist',
-    userSubtitle: 'MedPlus Pharmacy',
+    userName: pharmacistProfile?.name || 'Loading…',
+    userRole: pharmacistProfile?.qualifications || '',
+    userSubtitle: pharmacistProfile?.pharmacies?.[0]?.name || '',
     userIcon: <Package className="w-5 h-5 text-white" />,
     userIconBg: '#00B894',
     navTextColor: '#99D6CC',
@@ -126,8 +141,8 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
   const DashboardView = () => (
     <div className="space-y-6">
       <div>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Good Morning, Priya 👋</h2>
-        <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>Tuesday, 16 January 2024 · MedPlus Pharmacy, Koramangala</p>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Good Morning{pharmacistProfile?.name ? `, ${pharmacistProfile.name.split(' ')[0]}` : ''} 👋</h2>
+        <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}{pharmacistProfile?.pharmacies?.[0]?.name ? ` · ${pharmacistProfile.pharmacies[0].name}` : ''}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -574,10 +589,12 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
             <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#F0FDF4' }}>
               <Package className="w-12 h-12" style={{ color: '#00B894' }} />
             </div>
-            <h3 style={{ fontWeight: 700, fontSize: '1.25rem', color: '#1A1A2E' }}>Priya Sharma</h3>
-            <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>Pharm.D, Senior Pharmacist</p>
+            <h3 style={{ fontWeight: 700, fontSize: '1.25rem', color: '#1A1A2E' }}>{pharmacistProfile?.name || 'Loading…'}</h3>
+            <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>{pharmacistProfile?.qualifications || ''}</p>
             <div className="mt-3 flex justify-center">
-              <span className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: '#F0FDF4', color: '#22C55E' }}>✓ Certified Pharmacist</span>
+              <span className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: pharmacistProfile?.status === 'VERIFIED' ? '#F0FDF4' : '#FFFBEB', color: pharmacistProfile?.status === 'VERIFIED' ? '#22C55E' : '#F59E0B' }}>
+                {pharmacistProfile?.status === 'VERIFIED' ? '✓ Certified Pharmacist' : pharmacistProfile?.status || 'Pending Verification'}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -586,13 +603,13 @@ export function PharmacistPortal({}: PharmacistPortalProps) {
             <CardHeader className="pb-2"><CardTitle style={{ fontSize: '1rem', fontWeight: 600 }}>Professional Details</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {[
-                { label: 'Full Name', value: 'Priya Sharma' },
-                { label: 'License Number', value: 'PCI-KA-2018-56789' },
-                { label: 'Pharmacy', value: 'MedPlus Pharmacy, Koramangala' },
-                { label: 'Experience', value: '8 years' },
-                { label: 'Specialization', value: 'Clinical Pharmacy' },
-                { label: 'Contact', value: '+91 87654 32109' },
-                { label: 'Email', value: 'priya@medplus.com' },
+                { label: 'Full Name', value: pharmacistProfile?.name || '—' },
+                { label: 'License Number', value: pharmacistProfile?.regNo || pharmacistProfile?.licenseNumber || '—' },
+                { label: 'Pharmacy', value: pharmacistProfile?.pharmacies?.[0]?.name || '—' },
+                { label: 'Experience', value: pharmacistProfile?.experience || '—' },
+                { label: 'Qualifications', value: pharmacistProfile?.qualifications || '—' },
+                { label: 'Contact', value: pharmacistProfile?.phone || '—' },
+                { label: 'Email', value: pharmacistProfile?.email || pharmacistProfile?.user?.email || '—' },
               ].map((f, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC' }}>
                   <span style={{ fontSize: '0.875rem', color: '#6B7280' }}>{f.label}</span>

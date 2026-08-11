@@ -1,4 +1,4 @@
-import { PrismaClient, Role, ApprovalStatus, TransactionType, VerificationEntityType, NotificationType } from '@prisma/client';
+import { PrismaClient, Role, ApprovalStatus, TransactionType, VerificationEntityType, NotificationType, PrescriptionStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -309,6 +309,56 @@ async function main() {
       remarks: 'All documents verified and license matched against registry.',
       reviewedBy: adminUser.adminProfile?.id,
       reviewedAt: new Date(),
+    },
+  });
+
+  console.log('Seeding demo prescriptions (so portals are not empty on first login)...');
+  await prisma.prescription.upsert({
+    where: { id: 'seed-rx-pending-0001' },
+    update: {},
+    create: {
+      id: 'seed-rx-pending-0001',
+      doctorId: doctorUser.doctorProfile!.id,
+      patientId: patient.id,
+      status: PrescriptionStatus.PENDING,
+      notes: 'Take with food. Follow up in 2 weeks.',
+      items: {
+        create: [
+          { medicineId: medicineAspirin.id, dosage: '1-0-1', frequency: 'After meals', duration: '14 days' },
+        ],
+      },
+    },
+  });
+
+  const verifiedRx = await prisma.prescription.upsert({
+    where: { id: 'seed-rx-verified-0002' },
+    update: {},
+    create: {
+      id: 'seed-rx-verified-0002',
+      doctorId: doctorUser.doctorProfile!.id,
+      patientId: patient.id,
+      status: PrescriptionStatus.VERIFIED,
+      notes: 'Routine diabetes management refill.',
+      items: {
+        create: [
+          { medicineId: medicineMetformin.id, dosage: '1-0-0', frequency: 'Before breakfast', duration: '30 days' },
+        ],
+      },
+    },
+  });
+
+  console.log('Seeding a demo order against the verified prescription...');
+  await prisma.order.upsert({
+    where: { id: 'seed-order-0001' },
+    update: {},
+    create: {
+      id: 'seed-order-0001',
+      prescriptionId: verifiedRx.id,
+      pharmacyId: pharmacy.id,
+      patientId: patient.id,
+      shippingAddressId: patientAddress.id,
+      totalCost: 25.0,
+      status: 'PENDING',
     },
   });
 
