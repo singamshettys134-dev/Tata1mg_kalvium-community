@@ -101,6 +101,25 @@ export const RegisterSchema = z.object({
   qualifications: z.string().optional(),
 });
 
+// ─── Google sign-up completion schema ──────────────────────────────────────────
+// Used after Google has already verified identity (name/email) — this only
+// collects the professional details Google can't supply.
+
+export const CompleteGoogleSignupSchema = z.discriminatedUnion('role', [
+  z.object({
+    role: z.literal('DOCTOR'),
+    specialization: z.string().min(2, 'Specialization is required'),
+    licenseNumber: z.string().min(5, 'License number is required'),
+    phone: z.string().min(10, 'Phone must be at least 10 digits'),
+  }),
+  z.object({
+    role: z.literal('PHARMACIST'),
+    licenseNumber: z.string().min(5, 'License number is required'),
+    phone: z.string().min(10, 'Phone must be at least 10 digits'),
+    qualifications: z.string().min(5, 'Qualifications are required'),
+  }),
+]);
+
 // ─── List query schema ─────────────────────────────────────────────────────────
 
 export const ListQuerySchema = z.object({
@@ -123,4 +142,5 @@ export type UpdatePharmacyInput = z.infer<typeof UpdatePharmacySchema>;
 export type CreateNotificationInput = z.infer<typeof CreateNotificationSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type RegisterInput = z.infer<typeof RegisterSchema>;
+export type CompleteGoogleSignupInput = z.infer<typeof CompleteGoogleSignupSchema>;
 export type ListQueryInput = z.infer<typeof ListQuerySchema>;
