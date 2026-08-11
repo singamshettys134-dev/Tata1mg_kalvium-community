@@ -27,6 +27,20 @@ type PatientData = { id: string; name: string; age: number; gender: string; cond
 type ApprovedRxData = { id: string; patient: string; approvedAt: string; medicines: string; duration: string };
 type RejectedRxData = { id: string; patient: string; rejectedAt: string; reason: string; medicines: string };
 type NotificationData = { id: string; type: string; title: string; body: string; time: string; read: boolean; color: string };
+type MedicineOption = { id: string; name: string; strength?: string; dosageForm?: string };
+type DoctorProfileData = {
+  name: string;
+  email?: string;
+  specialization: string;
+  licenseNumber: string;
+  phone: string;
+  regNo?: string | null;
+  hospital?: string | null;
+  experience?: string | null;
+  consultationFee?: number | null;
+  status?: string;
+  user?: { email: string; createdAt: string };
+};
 
 const weeklyData: WeeklyData[] = [];
 const patients: PatientData[] = [];
@@ -55,24 +69,80 @@ export function DoctorPortal({}: DoctorPortalProps) {
   const [notifList, setNotifList] = useState<NotificationData[]>(notifications);
   const [patientList, setPatientList] = useState<PatientData[]>(patients);
   const [approvedRxList, setApprovedRxList] = useState<ApprovedRxData[]>(approvedRx);
-  const [rxMedicines, setRxMedicines] = useState([{ name: '', dose: '', freq: '', duration: '' }]);
+  const [rxMedicines, setRxMedicines] = useState([{ medicineId: '', dose: '', freq: '', duration: '' }]);
+  const [medicineOptions, setMedicineOptions] = useState<MedicineOption[]>([]);
+  const [rxPatientId, setRxPatientId] = useState('');
+  const [rxNotes, setRxNotes] = useState('');
+  const [rxSubmitting, setRxSubmitting] = useState(false);
+  const [rxSubmitError, setRxSubmitError] = useState('');
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfileData | null>(null);
 
   const markAllRead = () => {
     setNotifList((list) => list.map((n) => ({ ...n, read: true })));
   };
 
+  const refreshPrescriptions = async () => {
+    try {
+      const rxRes = await fetch('/api/doctor/prescriptions').then((r) => r.json());
+      if (Array.isArray(rxRes.data)) setApprovedRxList(rxRes.data);
+    } catch (e) {
+      console.error('Failed to refresh prescriptions', e);
+    }
+  };
+
+  const handleIssuePrescription = async () => {
+    setRxSubmitError('');
+    if (!rxPatientId) {
+      setRxSubmitError('Select a patient before issuing a prescription.');
+      return;
+    }
+    const items = rxMedicines
+      .filter((m) => m.medicineId && m.dose && m.duration)
+      .map((m) => ({ medicineId: m.medicineId, dosage: m.dose, frequency: m.freq || undefined, duration: m.duration }));
+    if (items.length === 0) {
+      setRxSubmitError('Add at least one medicine with dose and duration.');
+      return;
+    }
+    setRxSubmitting(true);
+    try {
+      const res = await fetch('/api/doctor/prescriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId: rxPatientId, notes: rxNotes || undefined, items }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRxSubmitError(data.error || 'Failed to issue prescription.');
+        return;
+      }
+      await refreshPrescriptions();
+      setShowCreateRx(false);
+      setRxPatientId('');
+      setRxNotes('');
+      setRxMedicines([{ medicineId: '', dose: '', freq: '', duration: '' }]);
+    } catch (e) {
+      setRxSubmitError('Network error. Please try again.');
+    } finally {
+      setRxSubmitting(false);
+    }
+  };
+
   React.useEffect(() => {
     async function loadDoctorData() {
       try {
-        const [patientsRes, rxRes, notifRes] = await Promise.all([
+        const [patientsRes, rxRes, notifRes, medRes, profileRes] = await Promise.all([
           fetch('/api/doctor/patients').then((r) => r.json()),
           fetch('/api/doctor/prescriptions').then((r) => r.json()),
           fetch('/api/doctor/notifications').then((r) => r.json()),
+          fetch('/api/medicines').then((r) => r.json()),
+          fetch('/api/doctor/profile').then((r) => r.json()),
         ]);
 
         if (Array.isArray(patientsRes.data)) setPatientList(patientsRes.data);
         if (Array.isArray(rxRes.data)) setApprovedRxList(rxRes.data);
         if (Array.isArray(notifRes.data)) setNotifList(notifRes.data);
+        if (Array.isArray(medRes.data)) setMedicineOptions(medRes.data);
+        if (profileRes.data) setDoctorProfile(profileRes.data);
       } catch (e) {
         console.error('Failed to load doctor portal data', e);
       }
@@ -97,9 +167,9 @@ export function DoctorPortal({}: DoctorPortalProps) {
     brandAccentColor: '#FF6B6B',
     background: '#1e293b',
     borderColor: '#334155',
-    userName: 'Dr. Rajesh Kumar',
-    userRole: 'Cardiologist',
-    userSubtitle: 'Cardiology',
+    userName: doctorProfile?.name || 'Loading…',
+    userRole: doctorProfile?.specialization || '',
+    userSubtitle: doctorProfile?.specialization || '',
     userIcon: <Stethoscope className="w-5 h-5 text-white" />,
     userIconBg: '#2563EB',
     navTextColor: '#94A3B8',
@@ -114,8 +184,8 @@ export function DoctorPortal({}: DoctorPortalProps) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Good Morning, Dr. Kumar 👋</h2>
-          <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>Tuesday, 16 January 2024</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Good Morning{doctorProfile?.name ? `, ${doctorProfile.name.replace(/^Dr\.?\s*/i, 'Dr. ')}` : ''} 👋</h2>
+          <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
         <Button onClick={() => setShowCreateRx(true)} style={{ backgroundColor: '#2563EB' }} className="text-white gap-2">
           <Plus className="w-4 h-4" /> Create Prescription
@@ -442,15 +512,13 @@ export function DoctorPortal({}: DoctorPortalProps) {
             <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#EFF6FF' }}>
               <Stethoscope className="w-12 h-12" style={{ color: '#2563EB' }} />
             </div>
-            <h3 style={{ fontWeight: 700, fontSize: '1.25rem', color: '#1A1A2E' }}>Dr. Rajesh Kumar</h3>
-            <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>MBBS, MD Cardiology</p>
+            <h3 style={{ fontWeight: 700, fontSize: '1.25rem', color: '#1A1A2E' }}>{doctorProfile?.name || 'Loading…'}</h3>
+            <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>{doctorProfile?.specialization || ''}</p>
             <div className="mt-3 flex justify-center">
-              <span className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: '#F0FDF4', color: '#22C55E' }}>✓ Verified Doctor</span>
+              <span className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: doctorProfile?.status === 'VERIFIED' ? '#F0FDF4' : '#FFFBEB', color: doctorProfile?.status === 'VERIFIED' ? '#22C55E' : '#F59E0B' }}>
+                {doctorProfile?.status === 'VERIFIED' ? '✓ Verified Doctor' : doctorProfile?.status || 'Pending Verification'}
+              </span>
             </div>
-            <div className="mt-4 flex justify-center gap-1">
-              {[1,2,3,4,5].map(s => <Star key={s} className="w-4 h-4 fill-yellow-400 text-yellow-400" />)}
-            </div>
-            <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginTop: '0.25rem' }}>4.9/5 (128 reviews)</p>
           </CardContent>
         </Card>
 
@@ -461,12 +529,12 @@ export function DoctorPortal({}: DoctorPortalProps) {
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                { label: 'Full Name', value: 'Dr. Rajesh Kumar' },
-                { label: 'Specialization', value: 'Cardiology (MD)' },
-                { label: 'Registration Number', value: 'MCI-2015-KA-12345' },
-                { label: 'Hospital', value: 'Apollo Hospitals, Bangalore' },
-                { label: 'Experience', value: '12 years' },
-                { label: 'Consultation Fee', value: '₹800 per visit' },
+                { label: 'Full Name', value: doctorProfile?.name || '—' },
+                { label: 'Specialization', value: doctorProfile?.specialization || '—' },
+                { label: 'Registration Number', value: doctorProfile?.regNo || doctorProfile?.licenseNumber || '—' },
+                { label: 'Hospital', value: doctorProfile?.hospital || '—' },
+                { label: 'Experience', value: doctorProfile?.experience || '—' },
+                { label: 'Consultation Fee', value: doctorProfile?.consultationFee ? `₹${doctorProfile.consultationFee} per visit` : '—' },
               ].map((field, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC' }}>
                   <span style={{ fontSize: '0.875rem', color: '#6B7280' }}>{field.label}</span>
@@ -482,8 +550,8 @@ export function DoctorPortal({}: DoctorPortalProps) {
             </CardHeader>
             <CardContent className="space-y-3">
               {[
-                { icon: Phone, label: '+91 98765 43210' },
-                { icon: Mail, label: 'dr.rajesh@apollohospitals.com' },
+                { icon: Phone, label: doctorProfile?.phone || '—' },
+                { icon: Mail, label: doctorProfile?.email || doctorProfile?.user?.email || '—' },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC' }}>
                   <item.icon className="w-4 h-4" style={{ color: '#2563EB' }} />
@@ -502,7 +570,7 @@ export function DoctorPortal({}: DoctorPortalProps) {
                 <PenLine className="w-8 h-8 mx-auto mb-2" style={{ color: '#2563EB' }} />
                 <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '0.75rem' }}>Your digital signature is active and verified</p>
                 <div className="text-center p-3 rounded-xl mb-3" style={{ backgroundColor: '#EFF6FF', fontFamily: 'cursive', fontSize: '1.5rem', color: '#2563EB' }}>
-                  Dr. R. Kumar
+                  {doctorProfile?.name || 'Signature'}
                 </div>
                 <Button variant="outline" size="sm" className="text-xs">Update Signature</Button>
               </div>
@@ -526,12 +594,22 @@ export function DoctorPortal({}: DoctorPortalProps) {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.375rem' }}>Patient Name</label>
-              <Input placeholder="Search patient..." />
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.375rem' }}>Patient</label>
+              <select
+                className="w-full h-10 px-3 rounded-xl border text-sm"
+                style={{ borderColor: '#E5E7EB' }}
+                value={rxPatientId}
+                onChange={(e) => setRxPatientId(e.target.value)}
+              >
+                <option value="">Select patient…</option>
+                {patientList.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.375rem' }}>Date</label>
-              <Input type="date" defaultValue="2024-01-16" />
+              <Input type="date" defaultValue={new Date().toISOString().slice(0, 10)} disabled />
             </div>
           </div>
 
@@ -539,37 +617,67 @@ export function DoctorPortal({}: DoctorPortalProps) {
             <div className="flex items-center justify-between mb-2">
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151' }}>Medicines</label>
               <button className="text-xs flex items-center gap-1" style={{ color: '#2563EB' }}
-                onClick={() => setRxMedicines([...rxMedicines, { name: '', dose: '', freq: '', duration: '' }])}>
+                onClick={() => setRxMedicines([...rxMedicines, { medicineId: '', dose: '', freq: '', duration: '' }])}>
                 <Plus className="w-3 h-3" /> Add Medicine
               </button>
             </div>
             {rxMedicines.map((med, i) => (
               <div key={i} className="grid grid-cols-4 gap-2 mb-2">
-                <Input placeholder="Medicine name" className="col-span-2" />
-                <Input placeholder="Dose" />
-                <Input placeholder="Duration" />
+                <select
+                  className="col-span-2 h-10 px-2 rounded-xl border text-sm"
+                  style={{ borderColor: '#E5E7EB' }}
+                  value={med.medicineId}
+                  onChange={(e) => {
+                    const next = [...rxMedicines];
+                    next[i] = { ...next[i], medicineId: e.target.value };
+                    setRxMedicines(next);
+                  }}
+                >
+                  <option value="">Select medicine…</option>
+                  {medicineOptions.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}{m.strength ? ` (${m.strength})` : ''}</option>
+                  ))}
+                </select>
+                <Input placeholder="Dose (e.g. 1-0-1)" value={med.dose} onChange={(e) => {
+                  const next = [...rxMedicines];
+                  next[i] = { ...next[i], dose: e.target.value };
+                  setRxMedicines(next);
+                }} />
+                <Input placeholder="Duration (e.g. 7 days)" value={med.duration} onChange={(e) => {
+                  const next = [...rxMedicines];
+                  next[i] = { ...next[i], duration: e.target.value };
+                  setRxMedicines(next);
+                }} />
               </div>
             ))}
+            {medicineOptions.length === 0 && (
+              <p style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Loading medicine catalog…</p>
+            )}
           </div>
 
           <div>
             <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.375rem' }}>Doctor&apos;s Notes</label>
             <textarea className="w-full p-3 border rounded-xl resize-none" rows={3} placeholder="Special instructions, follow-up notes..."
-              style={{ fontSize: '0.875rem', outline: 'none', borderColor: '#E5E7EB' }} />
+              style={{ fontSize: '0.875rem', outline: 'none', borderColor: '#E5E7EB' }}
+              value={rxNotes} onChange={(e) => setRxNotes(e.target.value)} />
           </div>
 
           <div>
             <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.375rem' }}>Digital Signature</label>
             <div className="p-4 rounded-xl text-center" style={{ backgroundColor: '#EFF6FF', fontFamily: 'cursive', fontSize: '1.5rem', color: '#2563EB' }}>
-              Dr. R. Kumar
+              {doctorProfile?.name || 'Signature'}
             </div>
           </div>
 
+          {rxSubmitError && (
+            <p style={{ color: '#EF4444', fontSize: '0.8rem' }}>{rxSubmitError}</p>
+          )}
+
           <div className="flex gap-3 pt-2">
-            <Button className="flex-1" style={{ backgroundColor: '#2563EB' }} onClick={() => setShowCreateRx(false)}>
-              <FileText className="w-4 h-4 mr-2" /> Issue Prescription
+            <Button className="flex-1" style={{ backgroundColor: '#2563EB' }} onClick={handleIssuePrescription} disabled={rxSubmitting}>
+              <FileText className="w-4 h-4 mr-2" /> {rxSubmitting ? 'Issuing…' : 'Issue Prescription'}
             </Button>
-            <Button variant="outline" className="flex-1" onClick={() => setShowCreateRx(false)}>Cancel</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowCreateRx(false)} disabled={rxSubmitting}>Cancel</Button>
           </div>
         </div>
       </div>
