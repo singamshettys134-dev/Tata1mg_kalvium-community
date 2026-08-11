@@ -79,7 +79,7 @@ async function main() {
   // 1. Admin
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@meditrack.com' },
-    update: {},
+    update: { passwordHash: DEMO_PASSWORD_HASH },
     create: {
       email: 'admin@meditrack.com',
       passwordHash: DEMO_PASSWORD_HASH,
@@ -100,7 +100,7 @@ async function main() {
   // 2. Doctor
   const doctorUser = await prisma.user.upsert({
     where: { email: 'doctor@meditrack.com' },
-    update: {},
+    update: { passwordHash: DEMO_PASSWORD_HASH },
     create: {
       email: 'doctor@meditrack.com',
       passwordHash: DEMO_PASSWORD_HASH,
@@ -128,7 +128,7 @@ async function main() {
   // 3. Pharmacist
   const pharmacistUser = await prisma.user.upsert({
     where: { email: 'pharmacist@meditrack.com' },
-    update: {},
+    update: { passwordHash: DEMO_PASSWORD_HASH },
     create: {
       email: 'pharmacist@meditrack.com',
       passwordHash: DEMO_PASSWORD_HASH,
