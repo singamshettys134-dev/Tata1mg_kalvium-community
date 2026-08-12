@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPendingGoogleSignup } from '@/lib/googleAuth';
-import { GOOGLE_PENDING_COOKIE_NAME } from '@/lib/constants';
+import { verifyGooglePendingToken, GOOGLE_PENDING_COOKIE_NAME } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get(GOOGLE_PENDING_COOKIE_NAME)?.value;
   if (!token) {
-    return NextResponse.json({ ok: false, error: 'No pending Google sign-up found.' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'No pending Google sign-in.' }, { status: 404 });
   }
 
-  const pending = verifyPendingGoogleSignup(token);
-  if (!pending) {
-    return NextResponse.json({ ok: false, error: 'Your Google sign-up session expired. Please try again.' }, { status: 401 });
+  const payload = verifyGooglePendingToken(token);
+  if (!payload) {
+    return NextResponse.json({ ok: false, error: 'Google sign-in link expired. Please try again.' }, { status: 410 });
   }
 
-  return NextResponse.json({ ok: true, data: { email: pending.email, name: pending.name, role: pending.role } });
+  return NextResponse.json({ ok: true, email: payload.email, name: payload.name });
 }

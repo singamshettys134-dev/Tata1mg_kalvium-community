@@ -24,10 +24,26 @@ interface AdminPortalProps {
   onBack?: () => void;
 }
 
-// NOTE: dailyPrescriptions, monthlyRevenue, and topDoctors were previously
-// hardcoded here with fake January data. They are now fetched live from
-// /api/admin/metrics and held in liveDaily / liveTopDoctors state below.
-// monthlyRevenue is not yet returned by the API so we keep an empty default.
+const dailyPrescriptions = [
+  { date: 'Jan 10', count: 245 }, { date: 'Jan 11', count: 312 },
+  { date: 'Jan 12', count: 289 }, { date: 'Jan 13', count: 358 },
+  { date: 'Jan 14', count: 401 }, { date: 'Jan 15', count: 376 },
+  { date: 'Jan 16', count: 428 },
+];
+
+const monthlyRevenue = [
+  { month: 'Aug', revenue: 1450000 }, { month: 'Sep', revenue: 1620000 },
+  { month: 'Oct', revenue: 1580000 }, { month: 'Nov', revenue: 1780000 },
+  { month: 'Dec', revenue: 1920000 }, { month: 'Jan', revenue: 2150000 },
+];
+
+const topDoctors = [
+  { name: 'Dr. Rajesh Kumar', prescriptions: 142 },
+  { name: 'Dr. Anjali Patel', prescriptions: 128 },
+  { name: 'Dr. Vikram Singh', prescriptions: 115 },
+  { name: 'Dr. Meena Rao', prescriptions: 98 },
+  { name: 'Dr. Arjun Nair', prescriptions: 87 },
+];
 
 const categoryData = [
   { name: 'Cardiac', value: 28, color: '#FF6B6B' },
@@ -116,6 +132,8 @@ const statusLabel = (status: string) => {
 type MetricCounts = { doctors: number; pharmacists: number; pharmacies: number; patients: number; prescriptions: number; orders: number };
 type DailyPoint = { date: string; count: number };
 type TopDoctorPoint = { name: string; prescriptions: number };
+type MonthlyRevenuePoint = { month: string; revenue: number };
+type CategoryPoint = { name: string; value: number; color: string };
 
 export function AdminPortal({}: AdminPortalProps) {
   const [activeView, setActiveView] = useState<AdminView>('overview');
@@ -127,9 +145,10 @@ export function AdminPortal({}: AdminPortalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<MetricCounts | null>(null);
-  const [liveDaily, setLiveDaily] = useState<DailyPoint[]>([]);
-  const [liveMonthlyRevenue, setLiveMonthlyRevenue] = useState<{ month: string; revenue: number }[]>([]);
-  const [liveTopDoctors, setLiveTopDoctors] = useState<TopDoctorPoint[]>([]);
+  const [liveDaily, setLiveDaily] = useState<DailyPoint[]>(dailyPrescriptions);
+  const [liveTopDoctors, setLiveTopDoctors] = useState<TopDoctorPoint[]>(topDoctors);
+  const [liveMonthlyRevenue, setLiveMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(monthlyRevenue);
+  const [liveCategoryData, setLiveCategoryData] = useState<CategoryPoint[]>(categoryData);
   const [adminProfile, setAdminProfile] = useState<{ name: string; employeeId: string; department: string; email?: string; user?: { email: string } } | null>(null);
 
   // Fetch real DB data
@@ -153,6 +172,8 @@ export function AdminPortal({}: AdminPortalProps) {
         setMetrics(metricsRes.data.counts);
         if (Array.isArray(metricsRes.data.dailyPrescriptions)) setLiveDaily(metricsRes.data.dailyPrescriptions);
         if (Array.isArray(metricsRes.data.topDoctors)) setLiveTopDoctors(metricsRes.data.topDoctors);
+        if (Array.isArray(metricsRes.data.monthlyRevenue)) setLiveMonthlyRevenue(metricsRes.data.monthlyRevenue);
+        if (Array.isArray(metricsRes.data.categoryData)) setLiveCategoryData(metricsRes.data.categoryData);
       }
       if (profileRes.data) setAdminProfile(profileRes.data);
     } catch (e) {
@@ -318,9 +339,9 @@ export function AdminPortal({}: AdminPortalProps) {
 
   const navItems = [
     { id: 'overview' as AdminView, label: 'Overview', icon: LayoutDashboard },
-    { id: 'doctors' as AdminView, label: 'Doctor Verification', icon: Stethoscope, badge: doctorList.filter(d => d.status === 'PENDING' || d.status === 'Pending').length },
-    { id: 'pharmacists' as AdminView, label: 'Pharmacist Verification', icon: Pill, badge: pharmList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length },
-    { id: 'pharmacies' as AdminView, label: 'Pharmacy Verification', icon: Building2, badge: pharmacyList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length },
+    { id: 'doctors' as AdminView, label: 'Doctor Verification', icon: Stethoscope, badge: doctorList.filter(d => d.status === 'Pending').length },
+    { id: 'pharmacists' as AdminView, label: 'Pharmacist Verification', icon: Pill, badge: pharmList.filter(p => p.status === 'Pending').length },
+    { id: 'pharmacies' as AdminView, label: 'Pharmacy Verification', icon: Building2, badge: pharmacyList.filter(p => p.status === 'Pending').length },
     { id: 'analytics' as AdminView, label: 'Analytics', icon: TrendingUp },
     { id: 'notifications' as AdminView, label: 'Notifications', icon: Bell, badge: notifList.filter(n => !n.read).length },
     { id: 'settings' as AdminView, label: 'Settings', icon: Settings },
@@ -407,8 +428,8 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3}>
-                  {categoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                <Pie data={liveCategoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3}>
+                  {liveCategoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                 </Pie>
                 <Tooltip />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '0.75rem' }} />
@@ -423,9 +444,9 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardHeader className="pb-2"><CardTitle style={{ fontSize: '1rem', fontWeight: 600 }}>Pending Verifications</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {[
-              { type: 'Doctor', count: doctorList.filter(d => d.status === 'PENDING' || d.status === 'Pending').length, color: '#2563EB', icon: Stethoscope, view: 'doctors' as AdminView },
-              { type: 'Pharmacist', count: pharmList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length, color: '#00B894', icon: Pill, view: 'pharmacists' as AdminView },
-              { type: 'Pharmacy', count: pharmacyList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length, color: '#8B5CF6', icon: Building2, view: 'pharmacies' as AdminView },
+              { type: 'Doctor', count: doctorList.filter(d => d.status === 'Pending').length, color: '#2563EB', icon: Stethoscope, view: 'doctors' as AdminView },
+              { type: 'Pharmacist', count: pharmList.filter(p => p.status === 'Pending').length, color: '#00B894', icon: Pill, view: 'pharmacists' as AdminView },
+              { type: 'Pharmacy', count: pharmacyList.filter(p => p.status === 'Pending').length, color: '#8B5CF6', icon: Building2, view: 'pharmacies' as AdminView },
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-xl cursor-pointer hover:opacity-80"
                 style={{ backgroundColor: item.color + '10' }}
@@ -540,11 +561,11 @@ export function AdminPortal({}: AdminPortalProps) {
           <div>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Doctor Verification</h2>
             <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>
-              <span className="text-yellow-600 font-medium">{doctorList.filter(d => d.status === 'PENDING' || d.status === 'Pending').length} Pending</span>
+              <span className="text-yellow-600 font-medium">{doctorList.filter(d => d.status === 'Pending').length} Pending</span>
               {' · '}
-              <span style={{ color: '#2563EB' }}>{doctorList.filter(d => d.status === 'UNDER_REVIEW' || d.status === 'Under Review').length} Under Review</span>
+              <span style={{ color: '#2563EB' }}>{doctorList.filter(d => d.status === 'Under Review').length} Under Review</span>
               {' · '}
-              <span style={{ color: '#22C55E' }}>{doctorList.filter(d => d.status === 'VERIFIED' || d.status === 'Verified').length} Verified</span>
+              <span style={{ color: '#22C55E' }}>{doctorList.filter(d => d.status === 'Verified').length} Verified</span>
             </p>
           </div>
           <div className="relative">
@@ -555,9 +576,9 @@ export function AdminPortal({}: AdminPortalProps) {
 
         <div className="grid grid-cols-3 gap-4 mb-2">
           {[
-            { label: 'Pending', count: doctorList.filter(d => d.status === 'PENDING' || d.status === 'Pending').length, color: '#F59E0B', bg: '#FFFBEB' },
-            { label: 'Under Review', count: doctorList.filter(d => d.status === 'UNDER_REVIEW' || d.status === 'Under Review').length, color: '#2563EB', bg: '#EFF6FF' },
-            { label: 'Verified', count: doctorList.filter(d => d.status === 'VERIFIED' || d.status === 'Verified').length, color: '#22C55E', bg: '#F0FDF4' },
+            { label: 'Pending', count: doctorList.filter(d => d.status === 'Pending').length, color: '#F59E0B', bg: '#FFFBEB' },
+            { label: 'Under Review', count: doctorList.filter(d => d.status === 'Under Review').length, color: '#2563EB', bg: '#EFF6FF' },
+            { label: 'Verified', count: doctorList.filter(d => d.status === 'Verified').length, color: '#22C55E', bg: '#F0FDF4' },
           ].map((s, i) => (
             <div key={i} className="p-3 rounded-xl text-center" style={{ backgroundColor: s.bg }}>
               <p style={{ fontSize: '1.5rem', fontWeight: 800, color: s.color }}>{s.count}</p>
@@ -588,9 +609,9 @@ export function AdminPortal({}: AdminPortalProps) {
         <div>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Pharmacist Verification</h2>
           <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>
-            <span className="text-yellow-600 font-medium">{pharmList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length} Pending</span>
+            <span className="text-yellow-600 font-medium">{pharmList.filter(p => p.status === 'Pending').length} Pending</span>
             {' · '}
-            <span style={{ color: '#22C55E' }}>{pharmList.filter(p => p.status === 'VERIFIED' || p.status === 'Verified').length} Verified</span>
+            <span style={{ color: '#22C55E' }}>{pharmList.filter(p => p.status === 'Verified').length} Verified</span>
           </p>
         </div>
       </div>
@@ -614,9 +635,9 @@ export function AdminPortal({}: AdminPortalProps) {
       <div>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1A1A2E' }}>Pharmacy Verification</h2>
         <p style={{ color: '#6B7280', fontSize: '0.875rem' }}>
-          <span className="text-yellow-600 font-medium">{pharmacyList.filter(p => p.status === 'PENDING' || p.status === 'Pending').length} Pending</span>
+          <span className="text-yellow-600 font-medium">{pharmacyList.filter(p => p.status === 'Pending').length} Pending</span>
           {' · '}
-          <span style={{ color: '#22C55E' }}>{pharmacyList.filter(p => p.status === 'VERIFIED' || p.status === 'Verified').length} Verified</span>
+          <span style={{ color: '#22C55E' }}>{pharmacyList.filter(p => p.status === 'Verified').length} Verified</span>
         </p>
       </div>
       <VerificationTable
@@ -695,8 +716,8 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value" paddingAngle={3} label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                  {categoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                <Pie data={liveCategoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value" paddingAngle={3} label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  {liveCategoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                 </Pie>
                 <Tooltip />
               </PieChart>
