@@ -1,40 +1,56 @@
-import jwt from 'jsonwebtoken';
+// Minimal Google OAuth 2.0 (Authorization Code flow) helper.
+// No next-auth / googleapis dependency — plain fetch calls, so it drops
+// straight into the app's existing custom JWT + cookie session system
+// (see lib/auth.ts) instead of running a parallel auth stack.
 
-// SECURITY: same posture as lib/auth.ts — refuse to run with a missing or
-// guessable secret rather than silently falling back to something insecure.
-if (!process.env.JWT_SECRET) {
-  throw new Error(
-    'JWT_SECRET environment variable is not set. Refusing to start with an insecure default — set JWT_SECRET to a long, random value.',
-  );
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is not set. Google sign-in is not configured.`);
+  }
+  return value;
 }
 
-const JWT_SECRET: string = process.env.JWT_SECRET;
+export function getGoogleRedirectUri(): string {
+  return requireEnv('GOOGLE_REDIRECT_URI');
+}
 
-const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const GOOGLE_USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v3/userinfo';
-
-export type SignupRole = 'DOCTOR' | 'PHARMACIST';
-
-/** Builds the URL we redirect the browser to so the user can approve access. */
-export function buildGoogleAuthUrl(params: { redirectUri: string; state: string }): string {
+/** Builds the URL to send the browser to for the Google consent screen. */
+export function buildGoogleAuthUrl(state: string): string {
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
-  const url = new URL(GOOGLE_AUTH_ENDPOINT);
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', params.redirectUri);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid email profile');
-  url.searchParams.set('state', params.state);
-  url.searchParams.set('prompt', 'select_account');
-  return url.toString();
+  const redirectUri = getGoogleRedirectUri();
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'online',
+    prompt: 'select_account',
+    state,
+  });
+
+  return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
-/** Exchanges the one-time authorization code for tokens. */
-export async function exchangeCodeForTokens(code: string, redirectUri: string): Promise<{ access_token: string; id_token: string }> {
+export interface GoogleProfile {
+  sub: string; // stable Google user id
+  email: string;
+  email_verified: boolean;
+  name?: string;
+}
+
+/** Exchanges the ?code=... from the callback for the signed-in user's profile. */
+export async function exchangeGoogleCode(code: string): Promise<GoogleProfile> {
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
+  const redirectUri = getGoogleRedirectUri();
 
-  const res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+  const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -46,61 +62,25 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
     }),
   });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Google token exchange failed (${res.status}): ${body}`);
+  if (!tokenRes.ok) {
+    throw new Error(`Google token exchange failed: ${tokenRes.status} ${await tokenRes.text()}`);
   }
 
-  return res.json();
-}
+  const tokenData = (await tokenRes.json()) as { access_token: string };
 
-export interface GoogleProfile {
-  sub: string;
-  email: string;
-  email_verified: boolean;
-  name: string;
-  picture?: string;
-}
-
-/** Fetches the authenticated user's Google profile. */
-export async function fetchGoogleProfile(accessToken: string): Promise<GoogleProfile> {
-  const res = await fetch(GOOGLE_USERINFO_ENDPOINT, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  const profileRes = await fetch(GOOGLE_USERINFO_URL, {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` },
   });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch Google profile (${res.status})`);
+
+  if (!profileRes.ok) {
+    throw new Error(`Google userinfo fetch failed: ${profileRes.status} ${await profileRes.text()}`);
   }
-  return res.json();
-}
 
-// ─── "Pending signup" token ──────────────────────────────────────────────
-// Issued right after Google verifies identity for someone who does NOT yet
-// have an account. Carries just enough to trust the verified email/name on
-// the follow-up "complete your profile" step, without re-doing OAuth.
+  const profile = (await profileRes.json()) as GoogleProfile;
 
-export interface PendingGoogleSignup {
-  email: string;
-  name: string;
-  role: SignupRole;
-  googleSub: string;
-}
-
-export function signPendingGoogleSignup(payload: PendingGoogleSignup): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
-}
-
-export function verifyPendingGoogleSignup(token: string): PendingGoogleSignup | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as PendingGoogleSignup;
-  } catch {
-    return null;
+  if (!profile.email || !profile.email_verified) {
+    throw new Error('Google account has no verified email.');
   }
-}
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} environment variable is not set — Google sign-in is not configured.`);
-  }
-  return value;
+  return profile;
 }

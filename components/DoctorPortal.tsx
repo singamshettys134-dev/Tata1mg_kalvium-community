@@ -152,7 +152,7 @@ export function DoctorPortal({}: DoctorPortalProps) {
 
   const navItems = [
     { id: 'dashboard' as DoctorView, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'patients' as DoctorView, label: 'My Patients', icon: Users, badge: patientList.length },
+    { id: 'patients' as DoctorView, label: 'My Patients', icon: Users, badge: 8 },
     { id: 'approved' as DoctorView, label: 'Issued Prescriptions', icon: CheckCircle },
     { id: 'rejected' as DoctorView, label: 'Rejected Prescriptions', icon: XCircle },
     { id: 'history' as DoctorView, label: 'Patient History', icon: ClipboardList },

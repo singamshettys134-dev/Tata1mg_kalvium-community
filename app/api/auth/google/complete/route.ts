@@ -2,76 +2,82 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
-import { signToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE } from '@/lib/auth';
-import { verifyPendingGoogleSignup } from '@/lib/googleAuth';
-import { GOOGLE_PENDING_COOKIE_NAME } from '@/lib/constants';
-import { CompleteGoogleSignupSchema } from '@/lib/validationSchemas';
+import {
+  signToken,
+  verifyGooglePendingToken,
+  GOOGLE_PENDING_COOKIE_NAME,
+} from '@/lib/auth';
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE } from '@/lib/constants';
+import { GoogleCompleteProfileSchema } from '@/lib/validationSchemas';
 
 export async function POST(request: NextRequest) {
   try {
-    const pendingToken = request.cookies.get(GOOGLE_PENDING_COOKIE_NAME)?.value;
-    if (!pendingToken) {
-      return NextResponse.json({ ok: false, error: 'No pending Google sign-up found. Please start again.' }, { status: 401 });
+    const pendingCookie = request.cookies.get(GOOGLE_PENDING_COOKIE_NAME)?.value;
+    if (!pendingCookie) {
+      return NextResponse.json({ ok: false, error: 'No pending Google sign-in. Please try again.' }, { status: 400 });
     }
-
-    const pending = verifyPendingGoogleSignup(pendingToken);
+    const pending = verifyGooglePendingToken(pendingCookie);
     if (!pending) {
-      return NextResponse.json({ ok: false, error: 'Your Google sign-up session expired. Please try again.' }, { status: 401 });
+      return NextResponse.json({ ok: false, error: 'Google sign-in link expired. Please try again.' }, { status: 410 });
     }
 
     const body = await request.json();
-    const parsed = CompleteGoogleSignupSchema.safeParse({ ...body, role: pending.role });
+    const parsed = GoogleCompleteProfileSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.errors[0].message }, { status: 400 });
     }
+    const { role, specialization, licenseNumber, phone, qualifications } = parsed.data;
 
+    // Someone may have registered manually with this email between the
+    // redirect and now (or clicked Google sign-in twice) — don't double-create.
     const existing = await prisma.user.findUnique({ where: { email: pending.email } });
     if (existing) {
-      return NextResponse.json({ ok: false, error: 'An account with this email already exists. Try signing in instead.' }, { status: 409 });
+      return NextResponse.json({ ok: false, error: 'An account with this email already exists. Please log in instead.' }, { status: 409 });
     }
 
-    // Google accounts don't use a password — set an unusable random hash so
-    // password-based login can never succeed for this account.
+    // Google users don't set a password — store an unusable random hash so
+    // the passwordHash column (required by the schema) stays populated.
     const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+    const name = pending.name || pending.email.split('@')[0];
 
     let profileId = '';
     let user;
 
-    if (parsed.data.role === 'DOCTOR') {
+    if (role === 'DOCTOR') {
+      if (!specialization || !licenseNumber || !phone) {
+        return NextResponse.json(
+          { ok: false, error: 'Doctors require specialization, licenseNumber, and phone' },
+          { status: 400 },
+        );
+      }
       user = await prisma.user.create({
         data: {
           email: pending.email,
           passwordHash,
+          googleId: pending.googleId,
           role: 'DOCTOR',
           doctorProfile: {
-            create: {
-              name: pending.name,
-              email: pending.email,
-              specialization: parsed.data.specialization,
-              licenseNumber: parsed.data.licenseNumber,
-              phone: parsed.data.phone,
-              status: 'PENDING',
-            },
+            create: { name, email: pending.email, specialization, licenseNumber, phone, status: 'PENDING' },
           },
         },
         include: { doctorProfile: true },
       });
       profileId = user.doctorProfile!.id;
     } else {
+      if (!qualifications || !licenseNumber || !phone) {
+        return NextResponse.json(
+          { ok: false, error: 'Pharmacists require qualifications, licenseNumber, and phone' },
+          { status: 400 },
+        );
+      }
       user = await prisma.user.create({
         data: {
           email: pending.email,
           passwordHash,
+          googleId: pending.googleId,
           role: 'PHARMACIST',
           pharmacistProfile: {
-            create: {
-              name: pending.name,
-              email: pending.email,
-              licenseNumber: parsed.data.licenseNumber,
-              phone: parsed.data.phone,
-              qualifications: parsed.data.qualifications,
-              status: 'PENDING',
-            },
+            create: { name, email: pending.email, licenseNumber, phone, qualifications, status: 'PENDING' },
           },
         },
         include: { pharmacistProfile: true },
@@ -84,12 +90,12 @@ export async function POST(request: NextRequest) {
       data: { userId: user.id, token, expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000) },
     });
     await prisma.auditLog.create({
-      data: { userId: user.id, action: 'LOGIN', details: `Account created via Google sign-up (${pending.email})` },
+      data: { userId: user.id, action: 'SIGNUP', details: `Google signup from ${pending.email}` },
     });
 
     const response = NextResponse.json({
       ok: true,
-      user: { id: user.id, name: pending.name, email: pending.email, role: user.role, profileId, approvalStatus: 'PENDING' },
+      user: { id: user.id, name, email: pending.email, role: user.role, profileId, approvalStatus: 'PENDING' },
     });
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
@@ -98,7 +104,7 @@ export async function POST(request: NextRequest) {
       maxAge: SESSION_MAX_AGE,
       path: '/',
     });
-    response.cookies.delete(GOOGLE_PENDING_COOKIE_NAME);
+    response.cookies.set(GOOGLE_PENDING_COOKIE_NAME, '', { maxAge: 0, path: '/' });
     return response;
   } catch (err) {
     console.error('[POST /api/auth/google/complete]', err);

@@ -1,62 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { signToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE } from '@/lib/auth';
-import {
-  exchangeCodeForTokens,
-  fetchGoogleProfile,
-  signPendingGoogleSignup,
-  type SignupRole,
-} from '@/lib/googleAuth';
-import {
-  GOOGLE_STATE_COOKIE_NAME,
-  GOOGLE_PENDING_COOKIE_NAME,
-  GOOGLE_PENDING_MAX_AGE,
-} from '@/lib/constants';
+import { exchangeGoogleCode } from '@/lib/googleAuth';
+import { signToken, signGooglePendingToken, GOOGLE_PENDING_COOKIE_NAME, GOOGLE_PENDING_MAX_AGE } from '@/lib/auth';
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE, GOOGLE_STATE_COOKIE_NAME } from '@/lib/constants';
 
-function redirectToAuthError(origin: string, message: string) {
-  const url = new URL('/auth', origin);
-  url.searchParams.set('error', message);
-  return NextResponse.redirect(url);
-}
+const ROLE_HOME: Record<string, string> = {
+  ADMIN: '/admin',
+  DOCTOR: '/doctor',
+  PHARMACIST: '/pharmacist',
+};
 
 export async function GET(request: NextRequest) {
-  const origin = request.nextUrl.origin;
-  const code = request.nextUrl.searchParams.get('code');
-  const stateRaw = request.nextUrl.searchParams.get('state');
-  const stateCookie = request.cookies.get(GOOGLE_STATE_COOKIE_NAME)?.value;
+  const { searchParams } = request.nextUrl;
+  const code = searchParams.get('code');
+  const state = searchParams.get('state');
+  const expectedState = request.cookies.get(GOOGLE_STATE_COOKIE_NAME)?.value;
 
-  if (!code || !stateRaw || !stateCookie) {
-    return redirectToAuthError(origin, 'Google sign-in was cancelled or expired. Please try again.');
-  }
+  const failUrl = new URL('/auth', request.url);
 
-  let parsedState: { csrf: string; role: SignupRole | null };
-  try {
-    parsedState = JSON.parse(Buffer.from(stateRaw, 'base64url').toString('utf-8'));
-  } catch {
-    return redirectToAuthError(origin, 'Invalid Google sign-in response. Please try again.');
-  }
-
-  if (parsedState.csrf !== stateCookie) {
-    return redirectToAuthError(origin, 'Could not verify the Google sign-in request. Please try again.');
+  if (!code || !state || !expectedState || state !== expectedState) {
+    failUrl.searchParams.set('error', 'google_auth_failed');
+    return NextResponse.redirect(failUrl);
   }
 
   try {
-    const redirectUri = new URL('/api/auth/google/callback', origin).toString();
-    const tokens = await exchangeCodeForTokens(code, redirectUri);
-    const profile = await fetchGoogleProfile(tokens.access_token);
+    const profile = await exchangeGoogleCode(code);
 
-    if (!profile.email_verified) {
-      return redirectToAuthError(origin, 'Your Google email is not verified. Please verify it with Google first.');
-    }
-
-    const existingUser = await prisma.user.findUnique({
-      where: { email: profile.email },
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ googleId: profile.sub }, { email: profile.email }] },
       include: { doctorProfile: true, pharmacistProfile: true, adminProfile: true },
     });
 
     if (existingUser) {
-      if (existingUser.deletedAt) {
-        return redirectToAuthError(origin, 'This account is no longer active.');
+      // Backfill googleId the first time someone signed up with a password
+      // and later chooses "Continue with Google" using the same email.
+      if (!existingUser.googleId) {
+        await prisma.user.update({ where: { id: existingUser.id }, data: { googleId: profile.sub } });
       }
 
       let profileId = '';
@@ -65,7 +44,6 @@ export async function GET(request: NextRequest) {
       else if (existingUser.role === 'ADMIN' && existingUser.adminProfile) profileId = existingUser.adminProfile.id;
 
       const token = signToken({ userId: existingUser.id, role: existingUser.role, profileId });
-
       await prisma.session.create({
         data: { userId: existingUser.id, token, expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000) },
       });
@@ -73,8 +51,8 @@ export async function GET(request: NextRequest) {
         data: { userId: existingUser.id, action: 'LOGIN', details: `Google login from ${profile.email}` },
       });
 
-      const destination = existingUser.role === 'DOCTOR' ? '/doctor' : existingUser.role === 'PHARMACIST' ? '/pharmacist' : '/admin';
-      const response = NextResponse.redirect(new URL(destination, origin));
+      const redirectUrl = new URL(ROLE_HOME[existingUser.role] ?? '/auth', request.url);
+      const response = NextResponse.redirect(redirectUrl);
       response.cookies.set(SESSION_COOKIE_NAME, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -82,25 +60,22 @@ export async function GET(request: NextRequest) {
         maxAge: SESSION_MAX_AGE,
         path: '/',
       });
-      response.cookies.delete(GOOGLE_STATE_COOKIE_NAME);
+      response.cookies.set(GOOGLE_STATE_COOKIE_NAME, '', { maxAge: 0, path: '/' });
       return response;
     }
 
-    // No existing account — this is a new signup. Google can verify identity
-    // but can't supply license numbers / specialization / etc., so send them
-    // to a short form to finish registration.
-    if (!parsedState.role) {
-      return redirectToAuthError(origin, 'No account found for that Google email. Please sign up first.');
-    }
-
-    const pendingToken = signPendingGoogleSignup({
+    // No account yet — hand back a short-lived, server-signed proof of the
+    // verified Google identity and send them to finish signup (pick role +
+    // license/specialization details) on the /auth page.
+    const pendingToken = signGooglePendingToken({
       email: profile.email,
-      name: profile.name,
-      role: parsedState.role,
-      googleSub: profile.sub,
+      name: profile.name ?? '',
+      googleId: profile.sub,
     });
 
-    const response = NextResponse.redirect(new URL('/auth/complete-profile', origin));
+    const redirectUrl = new URL('/auth', request.url);
+    redirectUrl.searchParams.set('completeProfile', '1');
+    const response = NextResponse.redirect(redirectUrl);
     response.cookies.set(GOOGLE_PENDING_COOKIE_NAME, pendingToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -108,10 +83,11 @@ export async function GET(request: NextRequest) {
       maxAge: GOOGLE_PENDING_MAX_AGE,
       path: '/',
     });
-    response.cookies.delete(GOOGLE_STATE_COOKIE_NAME);
+    response.cookies.set(GOOGLE_STATE_COOKIE_NAME, '', { maxAge: 0, path: '/' });
     return response;
   } catch (err) {
     console.error('[GET /api/auth/google/callback]', err);
-    return redirectToAuthError(origin, 'Something went wrong signing in with Google. Please try again.');
+    failUrl.searchParams.set('error', 'google_auth_failed');
+    return NextResponse.redirect(failUrl);
   }
 }
