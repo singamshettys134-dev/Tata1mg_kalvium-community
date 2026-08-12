@@ -132,6 +132,8 @@ const statusLabel = (status: string) => {
 type MetricCounts = { doctors: number; pharmacists: number; pharmacies: number; patients: number; prescriptions: number; orders: number };
 type DailyPoint = { date: string; count: number };
 type TopDoctorPoint = { name: string; prescriptions: number };
+type MonthlyRevenuePoint = { month: string; revenue: number };
+type CategoryPoint = { name: string; value: number; color: string };
 
 export function AdminPortal({}: AdminPortalProps) {
   const [activeView, setActiveView] = useState<AdminView>('overview');
@@ -145,6 +147,8 @@ export function AdminPortal({}: AdminPortalProps) {
   const [metrics, setMetrics] = useState<MetricCounts | null>(null);
   const [liveDaily, setLiveDaily] = useState<DailyPoint[]>(dailyPrescriptions);
   const [liveTopDoctors, setLiveTopDoctors] = useState<TopDoctorPoint[]>(topDoctors);
+  const [liveMonthlyRevenue, setLiveMonthlyRevenue] = useState<MonthlyRevenuePoint[]>(monthlyRevenue);
+  const [liveCategoryData, setLiveCategoryData] = useState<CategoryPoint[]>(categoryData);
   const [adminProfile, setAdminProfile] = useState<{ name: string; employeeId: string; department: string; email?: string; user?: { email: string } } | null>(null);
 
   // Fetch real DB data
@@ -168,6 +172,8 @@ export function AdminPortal({}: AdminPortalProps) {
         setMetrics(metricsRes.data.counts);
         if (Array.isArray(metricsRes.data.dailyPrescriptions)) setLiveDaily(metricsRes.data.dailyPrescriptions);
         if (Array.isArray(metricsRes.data.topDoctors)) setLiveTopDoctors(metricsRes.data.topDoctors);
+        if (Array.isArray(metricsRes.data.monthlyRevenue)) setLiveMonthlyRevenue(metricsRes.data.monthlyRevenue);
+        if (Array.isArray(metricsRes.data.categoryData)) setLiveCategoryData(metricsRes.data.categoryData);
       }
       if (profileRes.data) setAdminProfile(profileRes.data);
     } catch (e) {
@@ -422,8 +428,8 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3}>
-                  {categoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                <Pie data={liveCategoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3}>
+                  {liveCategoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                 </Pie>
                 <Tooltip />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '0.75rem' }} />
@@ -679,7 +685,7 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardHeader className="pb-2"><CardTitle style={{ fontSize: '1rem', fontWeight: 600 }}>Monthly Revenue</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={monthlyRevenue}>
+              <LineChart data={liveMonthlyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 100000).toFixed(1)}L`} />
@@ -710,8 +716,8 @@ export function AdminPortal({}: AdminPortalProps) {
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value" paddingAngle={3} label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                  {categoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                <Pie data={liveCategoryData} cx="50%" cy="50%" outerRadius={80} dataKey="value" paddingAngle={3} label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  {liveCategoryData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                 </Pie>
                 <Tooltip />
               </PieChart>
