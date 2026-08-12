@@ -40,6 +40,61 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Monthly revenue for the last 6 months, from real order totals
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const recentOrders = await prisma.order.findMany({
+      where: { createdAt: { gte: sixMonthsAgo } },
+      select: { createdAt: true, totalCost: true },
+    });
+
+    const monthsMap: Record<string, number> = {};
+    const monthCursor = new Date(sixMonthsAgo);
+    for (let i = 0; i < 6; i++) {
+      const label = monthCursor.toLocaleDateString('en-US', { month: 'short' });
+      monthsMap[label] = 0;
+      monthCursor.setMonth(monthCursor.getMonth() + 1);
+    }
+
+    recentOrders.forEach((o) => {
+      const label = o.createdAt.toLocaleDateString('en-US', { month: 'short' });
+      if (monthsMap[label] !== undefined) monthsMap[label] += o.totalCost;
+    });
+
+    const monthlyRevenue = Object.entries(monthsMap).map(([month, revenue]) => ({
+      month,
+      revenue: Math.round(revenue),
+    }));
+
+    // Category breakdown, from order items -> medicine -> category
+    const CATEGORY_COLORS: Record<string, string> = {};
+    const PALETTE = ['#FF6B6B', '#2563EB', '#00B894', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+
+    const orderItems = await prisma.orderItem.findMany({
+      select: { quantity: true, medicine: { select: { category: { select: { name: true } } } } },
+    });
+
+    const categoryCounts: Record<string, number> = {};
+    orderItems.forEach((item) => {
+      const catName = item.medicine.category?.name ?? 'Others';
+      categoryCounts[catName] = (categoryCounts[catName] || 0) + item.quantity;
+    });
+
+    const totalCategoryUnits = Object.values(categoryCounts).reduce((a, b) => a + b, 0);
+    const categoryData = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count], i) => {
+        if (!CATEGORY_COLORS[name]) CATEGORY_COLORS[name] = PALETTE[i % PALETTE.length];
+        return {
+          name,
+          value: totalCategoryUnits > 0 ? Math.round((count / totalCategoryUnits) * 100) : 0,
+          color: CATEGORY_COLORS[name],
+        };
+      });
+
     // Aggregate daily prescriptions for last 7 days
     const daysMap: Record<string, number> = {};
     const now = new Date();
@@ -95,6 +150,8 @@ export async function GET(request: NextRequest) {
       },
       dailyPrescriptions,
       topDoctors,
+      monthlyRevenue,
+      categoryData,
     });
   } catch (err) {
     console.error('[GET /api/admin/metrics]', err);

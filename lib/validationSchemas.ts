@@ -122,5 +122,15 @@ export type CreatePharmacyInput = z.infer<typeof CreatePharmacySchema>;
 export type UpdatePharmacyInput = z.infer<typeof UpdatePharmacySchema>;
 export type CreateNotificationInput = z.infer<typeof CreateNotificationSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
+// Same shape as RegisterSchema minus password — the account's identity comes
+// from the verified Google pending token instead, not a client-supplied email.
+export const GoogleCompleteProfileSchema = z.object({
+  role: z.enum(['DOCTOR', 'PHARMACIST']),
+  specialization: z.string().optional(),
+  licenseNumber: z.string().optional(),
+  phone: z.string().min(10, 'Phone must be at least 10 digits').optional(),
+  qualifications: z.string().optional(),
+});
+
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type ListQueryInput = z.infer<typeof ListQuerySchema>;

@@ -40,8 +40,33 @@ function validate(tab: AuthTab, fields: {
   name: string; email: string; password: string; confirmPassword: string;
   role: Role | ''; terms: boolean;
   specialization: string; qualifications: string; licenseNumber: string; phone: string;
+  skipIdentityFields?: boolean;
 }): FormErrors {
   const errors: FormErrors = {};
+  if (fields.skipIdentityFields) {
+    // Google flow: email/name are already verified server-side, and there's
+    // no password to set — only the role + role-specific fields need checks.
+    if (!fields.role) {
+      errors.role = 'Please select your role';
+    } else if (fields.role === 'doctor') {
+      if (!fields.specialization.trim()) errors.specialization = 'Specialization is required';
+      if (!fields.licenseNumber.trim()) errors.licenseNumber = 'License number is required';
+      if (!fields.phone.trim()) {
+        errors.phone = 'Phone number is required';
+      } else if (fields.phone.length < 10) {
+        errors.phone = 'Phone must be at least 10 digits';
+      }
+    } else if (fields.role === 'pharmacist') {
+      if (!fields.qualifications.trim()) errors.qualifications = 'Qualifications are required';
+      if (!fields.licenseNumber.trim()) errors.licenseNumber = 'License number is required';
+      if (!fields.phone.trim()) {
+        errors.phone = 'Phone number is required';
+      } else if (fields.phone.length < 10) {
+        errors.phone = 'Phone must be at least 10 digits';
+      }
+    }
+    return errors;
+  }
   if (tab === 'signup' && !fields.name.trim()) errors.name = 'Full name is required';
   if (!fields.email.trim()) {
     errors.email = 'Email is required';
@@ -106,6 +131,44 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
   const [apiError, setApiError] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // Google sign-in: when Google redirects back here with ?completeProfile=1,
+  // we've already verified the person's identity server-side — we just need
+  // them to pick a role and fill in license/specialization details before we
+  // create the account. googleIdentity holds the verified email/name once
+  // fetched; googleChecking covers the brief lookup on mount.
+  const [googleIdentity, setGoogleIdentity] = useState<{ email: string; name: string } | null>(null);
+  const [googleChecking, setGoogleChecking] = useState(false);
+  const isGoogleFlow = googleIdentity !== null;
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'google_auth_failed') {
+      setApiError('Google sign-in failed. Please try again.');
+      window.history.replaceState({}, '', '/auth');
+      return;
+    }
+    if (params.get('completeProfile') === '1') {
+      setGoogleChecking(true);
+      setTab('signup');
+      fetch('/api/auth/google/pending')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.ok) {
+            setGoogleIdentity({ email: data.email, name: data.name });
+            setEmail(data.email);
+            setName(data.name);
+          } else {
+            setApiError(data.error || 'Google sign-in link expired. Please try again.');
+          }
+        })
+        .catch(() => setApiError('Could not verify Google sign-in. Please try again.'))
+        .finally(() => {
+          setGoogleChecking(false);
+          window.history.replaceState({}, '', '/auth');
+        });
+    }
+  }, []);
+
   const switchTab = (t: AuthTab) => {
     setTab(t);
     setErrors({});
@@ -122,7 +185,7 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
     e.preventDefault();
     setSubmitted(true);
     setApiError('');
-    const errs = validate(tab, { name, email, password, confirmPassword, role, terms, specialization, qualifications, licenseNumber, phone });
+    const errs = validate(tab, { name, email, password, confirmPassword, role, terms, specialization, qualifications, licenseNumber, phone, skipIdentityFields: isGoogleFlow });
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
       setStatusMessage(null);
@@ -134,6 +197,32 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
     setStatusMessage(null);
 
     try {
+      if (isGoogleFlow) {
+        if (!role) {
+          setApiError('Please select a role to continue.');
+          return;
+        }
+        const res = await fetch('/api/auth/google/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: role.toUpperCase(),
+            specialization: role === 'doctor' ? specialization : undefined,
+            qualifications: role === 'pharmacist' ? qualifications : undefined,
+            licenseNumber,
+            phone,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          setApiError(data.error || 'Could not finish Google sign-up. Please try again.');
+          return;
+        }
+        const serverRole = (data.user?.role as string || '').toLowerCase() as Role;
+        setStatusMessage('Account created successfully. Redirecting…');
+        onLogin(serverRole);
+        return;
+      }
       if (tab === 'login') {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
@@ -279,7 +368,8 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
         </div>
 
         <div className="w-full max-w-md mx-auto">
-          {/* Tab switcher */}
+          {/* Tab switcher — hidden mid Google sign-up, there's nothing to switch between */}
+          {!isGoogleFlow && (
           <div className="flex p-1 rounded-2xl mb-8" style={{ backgroundColor: '#F1F5F9' }}>
             {(['login', 'signup'] as AuthTab[]).map(t => (
               <button key={t} onClick={() => switchTab(t)}
@@ -295,22 +385,40 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
               </button>
             ))}
           </div>
+          )}
 
           {/* Heading */}
           <div className="mb-7">
             <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A1A2E', marginBottom: '0.375rem' }}>
-              {tab === 'login' ? 'Welcome back' : 'Create your account'}
+              {isGoogleFlow ? 'Almost there' : tab === 'login' ? 'Welcome back' : 'Create your account'}
             </h1>
             <p style={{ color: '#6B7280', fontSize: '0.9rem' }}>
-              {tab === 'login'
+              {isGoogleFlow
+                ? 'Pick your role and fill in a few details to finish setting up your account.'
+                : tab === 'login'
                 ? 'Enter your credentials to access your dashboard.'
                 : 'Join thousands of healthcare professionals on MediTrack.'}
             </p>
           </div>
 
+          {googleChecking && (
+            <div className="mb-4 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: '#E5E7EB', backgroundColor: '#F8FAFC', color: '#6B7280' }}>
+              Verifying your Google sign-in…
+            </div>
+          )}
+
+          {isGoogleFlow && (
+            <div className="mb-4 flex items-center gap-2.5 p-3 rounded-xl" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+              <CheckCircle className="w-4 h-4 shrink-0" style={{ color: '#2563EB' }} />
+              <p style={{ fontSize: '0.8rem', color: '#1E3A8A' }}>
+                Signed in as <strong>{googleIdentity?.email}</strong> with Google
+              </p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            {/* Full Name — signup only */}
-            {tab === 'signup' && (
+            {/* Full Name — signup only, not needed in the Google flow (we already have it) */}
+            {tab === 'signup' && !isGoogleFlow && (
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '0.375rem' }}>
                   Full Name
@@ -332,29 +440,32 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
               </div>
             )}
 
-            {/* Email */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '0.375rem' }}>
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#9CA3AF' }} />
-                <Input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="pl-9"
-                  style={inputStyle('email')}
-                />
-                {submitted && !errors.email && email && (
-                  <CheckCircle className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />
-                )}
+            {/* Email — not shown in the Google flow (already verified, see banner above) */}
+            {!isGoogleFlow && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '0.375rem' }}>
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#9CA3AF' }} />
+                  <Input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="pl-9"
+                    style={inputStyle('email')}
+                  />
+                  {submitted && !errors.email && email && (
+                    <CheckCircle className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />
+                  )}
+                </div>
+                <FieldError msg={errors.email} />
               </div>
-              <FieldError msg={errors.email} />
-            </div>
+            )}
 
-            {/* Password */}
+            {/* Password — not needed in the Google flow, Google already verified identity */}
+            {!isGoogleFlow && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151' }}>Password</label>
@@ -418,9 +529,10 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
                 </div>
               )}
             </div>
+            )}
 
             {/* Confirm Password — signup only */}
-            {tab === 'signup' && (
+            {tab === 'signup' && !isGoogleFlow && (
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '0.375rem' }}>
                   Confirm Password
@@ -598,40 +710,46 @@ export function AuthPage({ onLogin, onBack }: AuthPageProps) {
             )}
 
             {/* Submit */}
-            <Button type="submit" className="w-full h-11 text-white mt-2" disabled={loading}
-              style={{ background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)', fontSize: '0.95rem', fontWeight: 700, opacity: loading ? 0.7 : 1 }}>
-              {loading ? 'Please wait…' : tab === 'login' ? 'Log In to Dashboard' : 'Create My Account'}
+            <Button type="submit" className="w-full h-11 text-white mt-2" disabled={loading || googleChecking}
+              style={{ background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)', fontSize: '0.95rem', fontWeight: 700, opacity: (loading || googleChecking) ? 0.7 : 1 }}>
+              {loading ? 'Please wait…' : isGoogleFlow ? 'Finish Signing Up' : tab === 'login' ? 'Log In to Dashboard' : 'Create My Account'}
               {!loading && <ChevronRight className="w-4 h-4 ml-1" />}
             </Button>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E5E7EB' }}></div>
-              <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>or continue with</span>
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E5E7EB' }}></div>
-            </div>
+            {/* Divider + Google — hidden once we're already mid Google sign-up */}
+            {!isGoogleFlow && (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px" style={{ backgroundColor: '#E5E7EB' }}></div>
+                  <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>or continue with</span>
+                  <div className="flex-1 h-px" style={{ backgroundColor: '#E5E7EB' }}></div>
+                </div>
 
-            {/* Google */}
-            <button type="button" className="w-full h-11 flex items-center justify-center gap-3 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all"
-              style={{ fontSize: '0.875rem', fontWeight: 600, color: '#374151' }}>
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
-            </button>
+                <button type="button" onClick={() => { window.location.href = '/api/auth/google'; }}
+                  className="w-full h-11 flex items-center justify-center gap-3 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all"
+                  style={{ fontSize: '0.875rem', fontWeight: 600, color: '#374151' }}>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Continue with Google
+                </button>
+              </>
+            )}
           </form>
 
-          {/* Switch tab footer */}
-          <p className="text-center mt-6" style={{ fontSize: '0.875rem', color: '#6B7280' }}>
-            {tab === 'login' ? "Don't have an account? " : 'Already have an account? '}
-            <button onClick={() => switchTab(tab === 'login' ? 'signup' : 'login')}
-              style={{ color: '#2563EB', fontWeight: 700 }}>
-              {tab === 'login' ? 'Sign Up' : 'Log In'}
-            </button>
-          </p>
+          {/* Switch tab footer — hidden mid Google sign-up */}
+          {!isGoogleFlow && (
+            <p className="text-center mt-6" style={{ fontSize: '0.875rem', color: '#6B7280' }}>
+              {tab === 'login' ? "Don't have an account? " : 'Already have an account? '}
+              <button onClick={() => switchTab(tab === 'login' ? 'signup' : 'login')}
+                style={{ color: '#2563EB', fontWeight: 700 }}>
+                {tab === 'login' ? 'Sign Up' : 'Log In'}
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>
