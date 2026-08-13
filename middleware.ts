@@ -4,13 +4,11 @@ import { jwtVerify } from 'jose';
 import { SESSION_COOKIE_NAME } from '@/lib/constants';
 
 const ROLE_ROUTES: Record<string, string> = {
-  '/admin': 'ADMIN',
   '/doctor': 'DOCTOR',
   '/pharmacist': 'PHARMACIST',
 };
 
 const ROLE_HOME: Record<string, string> = {
-  ADMIN: '/admin',
   DOCTOR: '/doctor',
   PHARMACIST: '/pharmacist',
 };
@@ -64,5 +62,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/doctor/:path*', '/pharmacist/:path*'],
+  matcher: ['/doctor/:path*', '/pharmacist/:path*'],
 };
