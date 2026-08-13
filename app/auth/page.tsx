@@ -11,7 +11,6 @@ export default function Auth() {
       onLogin={(role) => {
         if (role === "doctor") router.push("/doctor");
         else if (role === "pharmacist") router.push("/pharmacist");
-        else if (role === "admin") router.push("/admin");
       }}
       onBack={() => router.push("/")}
     />
